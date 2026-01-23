@@ -4,14 +4,8 @@ part 'saved_state.g.dart';
 
 @collection
 class SavedState {
-  Id id = 0; // singleton row
+  Id id = 0; // singleton row (always 0)
 
-  late String favoriteEventIdsJson;
-  late String sessionSelectionsJson;
-
-  SavedState({
-    this.id = 0,
-    this.favoriteEventIdsJson = '[]',
-    this.sessionSelectionsJson = '{}',
-  });
+  String favoriteEventIdsJson = '[]';
+  String sessionSelectionsJson = '{}';
 }

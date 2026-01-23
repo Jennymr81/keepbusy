@@ -1,10 +1,9 @@
 // lib/pages/home_page.dart
 
-import 'dart:async';
-import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:isar/isar.dart';
@@ -90,7 +89,7 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   // Load persisted session selections from local storage
   Future<void> _loadSessionSelectionsFromPrefs() async {
     try {
-      final loaded = await SavedStateService.load();
+      final loaded = await SavedRepositoryIsar.load();
 
       if (!mounted) return;
       setState(() {
@@ -116,7 +115,7 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   // Save current selections to local storage
   Future<void> _saveSessionSelectionsToPrefs() async {
     try {
-      await SavedStateService.save(
+      await SavedRepositoryIsar.save(
         favoriteEventIds: _favoriteEventIds,
         sessionSelections: _sessionSelections,
       );
@@ -224,8 +223,10 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   }
 
   Future<void> _initDb() async {
-    await ProfileService.init(); // Initializes Isar
-    final profiles = await ProfileService.loadProfiles();
+    await ProfilesRepositoryIsar
+.init(); // Initializes Isar
+    final profiles = await ProfilesRepositoryIsar
+.loadProfiles();
 
     if (!mounted) return;
     setState(() => _profiles = profiles);
@@ -234,7 +235,8 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   }
 
   Future<void> _handleSave(Profile profile) async {
-    await ProfileService.saveProfile(profile);
+    await ProfilesRepositoryIsar
+.saveProfile(profile);
 
     setState(() {
       final index = _profiles.indexWhere((p) => p.id == profile.id);
@@ -253,7 +255,8 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
 
   Future<void> _handleDelete(Profile profile) async {
     // 1) Pull a fresh list from DB (so we have real ids)
-    final all = await ProfileService.loadProfiles();
+    final all = await ProfilesRepositoryIsar
+.loadProfiles();
     debugPrint('DELETE REQUEST: id=${profile.id}, first=${profile.firstName}');
 
     // 2) Try to find the target row to delete
@@ -295,10 +298,12 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     }
 
     // 4) Delete that ONE row by id
-    await ProfileService.deleteProfile(target);
+    await ProfilesRepositoryIsar
+.deleteProfile(target);
 
     // 5) Reload from DB so UI matches exactly
-    final fresh = await ProfileService.loadProfiles();
+    final fresh = await ProfilesRepositoryIsar
+.loadProfiles();
     if (!mounted) return;
     setState(() => _profiles = fresh);
 
@@ -399,14 +404,17 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
         page = ProfilesPage(
           profiles: _profiles,
           onUpdate: (index, updated) async {
-            await ProfileService.saveProfile(updated);
-            final fresh = await ProfileService.loadProfiles();
-            if (!mounted) return;
-            setState(() => _profiles = fresh);
-          },
+  await _handleSave(updated);
+  final fresh = await ProfilesRepositoryIsar.loadProfiles();
+  if (!mounted) return;
+  setState(() => _profiles = fresh);
+},
+
           onAdd: (newProfile) async {
-            await ProfileService.saveProfile(newProfile);
-            final fresh = await ProfileService.loadProfiles();
+            await ProfilesRepositoryIsar
+.saveProfile(newProfile);
+            final fresh = await ProfilesRepositoryIsar
+.loadProfiles();
             if (!mounted) return;
             setState(() => _profiles = fresh);
           },

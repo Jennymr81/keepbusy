@@ -69,11 +69,10 @@ SavedState _savedStateDeserialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  final object = SavedState(
-    favoriteEventIdsJson: reader.readStringOrNull(offsets[0]) ?? '[]',
-    id: id,
-    sessionSelectionsJson: reader.readStringOrNull(offsets[1]) ?? '{}',
-  );
+  final object = SavedState();
+  object.favoriteEventIdsJson = reader.readString(offsets[0]);
+  object.id = id;
+  object.sessionSelectionsJson = reader.readString(offsets[1]);
   return object;
 }
 
@@ -85,9 +84,9 @@ P _savedStateDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readStringOrNull(offset) ?? '[]') as P;
+      return (reader.readString(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset) ?? '{}') as P;
+      return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
