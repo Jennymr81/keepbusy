@@ -10,7 +10,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // This opens Isar via db.dart (through ProfileService)
-  await ProfileService.init();
+await ProfilesRepositoryIsar.init();
 
   runApp(const KeepBusyApp());
 }

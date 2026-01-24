@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/widgets.dart';
 
-const String kEventFallback   = 'assets/placeholders/event.jpg';
-const String kProfileFallback = 'assets/placeholders/profile.jpg'; 
+const String kEventFallback   = 'assets/keepbusy_logo.png';
+const String kProfileFallback = 'assets/keepbusy_logo.png'; 
 
 ImageProvider<Object> profileImageProvider(String? path) {
   final p = path?.trim();

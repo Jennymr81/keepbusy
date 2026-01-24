@@ -826,7 +826,7 @@ Widget weekView() {
   // avatar
   final avatarSrc = (p.asset != null && p.asset!.isNotEmpty)
       ? p.asset!
-      : 'assets/placeholders/event.jpg';
+      : 'assets/keepbusy_logo.png';
   final avatarProvider = profileImageProvider(avatarSrc);
 
   return InkWell(

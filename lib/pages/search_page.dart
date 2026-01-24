@@ -909,6 +909,23 @@ if (needsLocation && _me == null && !_locLoading) {
 
     final filtered = _events.where((e) {
 
+// Radius filter (requires both user + event coordinates)
+if (radiusMiles != null) {
+  final evLat = e.locationLat;
+  final evLng = e.locationLng;
+
+  // If we can't compute distance, hide it when radius is used
+  if (_me == null || evLat == null || evLng == null) return false;
+
+  final miles = _milesBetween(
+    _me!.latitude,
+    _me!.longitude,
+    evLat,
+    evLng,
+  );
+  if (miles > radiusMiles!) return false;
+}
+
 
       // Favorites-only filter
       if (_onlyFavorites) {
@@ -1099,9 +1116,18 @@ filtered.sort((a, b) {
       return byScore != 0 ? byScore : title(a).compareTo(title(b));
 
     case SortOption.closest:
-      // We can't truly sort by distance until Events store lat/lng.
-      // For now, keep behavior stable.
-      return startDate(a).compareTo(startDate(b));
+  // Sort by distance to user (events missing coords go to bottom)
+  if (_me == null) return 0;
+
+  double dist(Event e) {
+    final evLat = e.locationLat;
+    final evLng = e.locationLng;
+    if (evLat == null || evLng == null) return double.infinity;
+    return _milesBetween(_me!.latitude, _me!.longitude, evLat, evLng);
+  }
+
+  return dist(a).compareTo(dist(b));
+
   }
 });
 
@@ -1331,7 +1357,7 @@ LayoutBuilder(
                           weeks: null,
                           cost: e.cost,
                           imageSrc: _firstImageLink(e) ??
-                              'assets/images/placeholder.jpg',
+                              'assets/keepbusy_logo.png',
                           onView: () => widget.onOpenEvent(e),
                           onEdit: () async {},
                         );
@@ -1668,7 +1694,7 @@ class EventQuickViewCard extends StatelessWidget {
 
 
   ImageProvider _imageProvider(String? src) {
-    const fallback = 'assets/placeholders/event.png';
+    const fallback = 'assets/keepbusy_logo.png';
 
     if (src == null || src.trim().isEmpty) {
       return const AssetImage(fallback);

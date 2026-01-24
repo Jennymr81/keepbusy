@@ -1,3 +1,4 @@
+// lib/repositories/local/saved_repository_isar.dart
 import 'dart:convert';
 
 import 'package:isar/isar.dart';
@@ -5,9 +6,8 @@ import 'package:isar/isar.dart';
 import '../../data/db.dart';
 import '../../models/saved_state.dart';
 
-
-class SavedStateService {
-  SavedStateService._();
+class SavedRepositoryIsar {
+  SavedRepositoryIsar._(); // private constructor (optional)
 
   static const Id _singletonId = 0;
 
@@ -15,34 +15,31 @@ class SavedStateService {
     final existing = await isar.collection<SavedState>().get(_singletonId);
     if (existing != null) return existing;
 
-    final created = SavedState();
+    final created = SavedState(); // id defaults to 0 (singleton)
     await isar.collection<SavedState>().put(created);
     return created;
   }
 
   /// Loads favorites + session selections.
-  /// Returns:
-  /// - favorites: Set<int>
-  /// - selections: Map<int, Map<int, Set<int>>>
   static Future<({
     Set<int> favoriteEventIds,
     Map<int, Map<int, Set<int>>> sessionSelections,
   })> load() async {
     final isar = await getIsar();
-    final row = await isar.collection<SavedState>()
-.get(_singletonId);
+    final row = await isar.collection<SavedState>().get(_singletonId);
 
     if (row == null) {
-      return (favoriteEventIds: <int>{}, sessionSelections: <int, Map<int, Set<int>>>{});
+      return (
+        favoriteEventIds: <int>{},
+        sessionSelections: <int, Map<int, Set<int>>>{},
+      );
     }
 
-    // favorites
     final favList = (jsonDecode(row.favoriteEventIdsJson) as List)
         .whereType<num>()
         .map((n) => n.toInt())
         .toSet();
 
-    // selections: Map<String, Map<String, List<int>>>
     final decoded = jsonDecode(row.sessionSelectionsJson);
     final result = <int, Map<int, Set<int>>>{};
 
@@ -82,7 +79,6 @@ class SavedStateService {
   }) async {
     final isar = await getIsar();
 
-    // JSON-safe selections: Map<String, Map<String, List<int>>>
     final Map<String, Map<String, List<int>>> out = {};
     sessionSelections.forEach((eventId, sessions) {
       if (sessions.isEmpty) return;
@@ -103,13 +99,14 @@ class SavedStateService {
       final row = await _getOrCreate(isar);
       row.favoriteEventIdsJson = favJson;
       row.sessionSelectionsJson = selJson;
-      await isar.collection<SavedState>()
-.put(row);
+      await isar.collection<SavedState>().put(row);
     });
   }
 
-  /// Clears everything saved.
   static Future<void> clear() async {
-    await save(favoriteEventIds: <int>{}, sessionSelections: <int, Map<int, Set<int>>>{});
+    await save(
+      favoriteEventIds: <int>{},
+      sessionSelections: <int, Map<int, Set<int>>>{},
+    );
   }
 }

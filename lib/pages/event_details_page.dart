@@ -51,12 +51,10 @@ class EventDetailsPage extends StatefulWidget {
   final Profile? profile; // nullable
   final List<Profile> profiles;
 
-  /// For this event: sessionIndex -> set of profile indexes (into `profiles`)
-  final Map<int, Set<int>> sessionSelections;
+  /// slotId -> set of profile indexes
+final Map<Id, Set<int>> sessionSelections;
+final void Function(Map<Id, Set<int>>)? onUpdateSessionSelections;
 
-  /// Called whenever the user changes which profiles are selected
-  /// for any session on this event page.
-  final void Function(Map<int, Set<int>>)? onUpdateSessionSelections;
 
   @override
   State<EventDetailsPage> createState() => _EventDetailsPageState();
@@ -65,9 +63,40 @@ class EventDetailsPage extends StatefulWidget {
 class _EventDetailsPageState extends State<EventDetailsPage> {
   late Event _event;
 
-  /// sessionIndex (0-based, display order / sessionIndex) -> set of profile indexes
-  /// into `widget.profiles`.
+  /// sessionIndex -> set(profileIndex)  (OLD approach; we’ll phase this out)
   Map<int, Set<int>> _sessionSelectedProfileIndexes = {};
+
+  /// slotId -> set(profileIndex)  (NEW source of truth)
+  Map<Id, Set<int>> _slotSelectedProfileIndexes = {};
+
+
+Map<int, Set<int>> _buildSessionSelectionsFromSlots() {
+  final out = <int, Set<int>>{};
+
+  // Group loaded slots by sessionIndex
+  final bySession = <int, List<EventSlot>>{};
+  for (final s in _event.slotIds) {
+    final key = s.sessionIndex ?? 0;
+    (bySession[key] ??= <EventSlot>[]).add(s);
+  }
+
+  // Union selected profiles across slots in each session
+  for (final entry in bySession.entries) {
+    final sessionKey = entry.key;
+    final slots = entry.value;
+
+    final union = <int>{};
+    for (final s in slots) {
+      final sid = s.id;
+      if (sid == 0) continue;
+      union.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
+    }
+
+    if (union.isNotEmpty) out[sessionKey] = union;
+  }
+
+  return out;
+}
 
   @override
   void initState() {
@@ -75,10 +104,11 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
     _event = widget.event;
 
     // start from whatever the parent passed in (if anything)
-    _sessionSelectedProfileIndexes = {
-      for (final entry in widget.sessionSelections.entries)
-        entry.key: Set<int>.from(entry.value),
-    };
+    _slotSelectedProfileIndexes = {
+  for (final entry in widget.sessionSelections.entries)
+    entry.key: Set<int>.from(entry.value),
+};
+
   }
 
   /// Pretty label for a profile index (nickname > full name > fallback).
@@ -403,114 +433,121 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
     );
   }
 
-  Future<void> _pickProfilesForSession(int sessionIndex) async {
-    if (widget.profiles.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one profile first.')),
-      );
-      return;
-    }
-
-    // current selection for this session (by profile index)
-    final current = Set<int>.from(
-      _sessionSelectedProfileIndexes[sessionIndex] ?? const <int>{},
+ Future<void> _pickProfilesForSession(
+  int sessionKey,
+  List<EventSlot> sessionSlots,
+) async {
+  if (widget.profiles.isEmpty) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Add at least one profile first.')),
     );
-
-    final result = await showModalBottomSheet<Set<int>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        Set<int> temp = Set<int>.from(current);
-
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: StatefulBuilder(
-              builder: (ctx, setSB) {
-                final theme = Theme.of(ctx);
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Select profiles for this session',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // scrollable list of profiles with checkboxes
-                    SizedBox(
-                      height: 260,
-                      child: ListView.builder(
-                        itemCount: widget.profiles.length,
-                        itemBuilder: (ctx, i) {
-                          final checked = temp.contains(i);
-                          final p = widget.profiles[i];
-
-                          // Try to show a nice label: nickname, then name, then fallback
-                          final nickname = (p.nickname ?? '').trim();
-                          final fullName =
-                              '${p.firstName ?? ''} ${p.lastName ?? ''}'
-                                  .trim();
-                          final label = nickname.isNotEmpty
-                              ? nickname
-                              : (fullName.isNotEmpty
-                                  ? fullName
-                                  : 'Profile ${i + 1}');
-
-                          return CheckboxListTile(
-                            value: checked,
-                            title: Text(label),
-                            onChanged: (val) {
-                              setSB(() {
-                                if (val == true) {
-                                  temp.add(i);
-                                } else {
-                                  temp.remove(i);
-                                }
-                              });
-                            },
-                          );
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancel'),
-                        ),
-                        const Spacer(),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(ctx, temp),
-                          child: const Text('Done'),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-
-    if (result == null) return;
-
-    setState(() {
-      _sessionSelectedProfileIndexes[sessionIndex] = result;
-    });
-
-    if (widget.onUpdateSessionSelections != null) {
-      widget.onUpdateSessionSelections!(
-        Map<int, Set<int>>.from(_sessionSelectedProfileIndexes),
-      );
-    }
+    return;
   }
+
+  // ✅ Slot IDs for this session
+  final slotIds = sessionSlots
+      .map((s) => s.id)
+      .where((id) => id != 0)
+      .toList();
+
+  // ✅ Current selection = UNION across all slots in this session
+  final current = <int>{};
+  for (final sid in slotIds) {
+    current.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
+  }
+
+  final result = await showModalBottomSheet<Set<int>>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) {
+      Set<int> temp = Set<int>.from(current);
+
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: StatefulBuilder(
+            builder: (ctx, setSB) {
+              final theme = Theme.of(ctx);
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Select profiles for this session',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    height: 260,
+                    child: ListView.builder(
+                      itemCount: widget.profiles.length,
+                      itemBuilder: (ctx, i) {
+                        final checked = temp.contains(i);
+                        final p = widget.profiles[i];
+
+                        final nickname = (p.nickname ?? '').trim();
+                        final fullName =
+                            '${p.firstName ?? ''} ${p.lastName ?? ''}'.trim();
+                        final label = nickname.isNotEmpty
+                            ? nickname
+                            : (fullName.isNotEmpty ? fullName : 'Profile ${i + 1}');
+
+                        return CheckboxListTile(
+                          value: checked,
+                          title: Text(label),
+                          onChanged: (val) {
+                            setSB(() {
+                              if (val == true) {
+                                temp.add(i);
+                              } else {
+                                temp.remove(i);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel'),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, temp),
+                        child: const Text('Done'),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
+
+  if (result == null) return;
+
+  // ✅ Write the same selected set to EACH slot in this session
+  setState(() {
+    for (final sid in slotIds) {
+      _slotSelectedProfileIndexes[sid] = Set<int>.from(result);
+    }
+  });
+
+  // ✅ Notify parent using SESSION -> profiles (union across slots)
+  widget.onUpdateSessionSelections?.call(_buildSessionSelectionsFromSlots());
+}
 
   @override
   Widget build(BuildContext context) {
@@ -867,9 +904,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
                                               ),
                                               tooltip:
                                                   'Select profiles for this session',
-                                              onPressed: () =>
-                                                  _pickProfilesForSession(
-                                                      key),
+                                              onPressed: () => _pickProfilesForSession(key, bySession[key] ?? const <EventSlot>[]),
                                             ),
                                           ],
                                         ),
@@ -1031,9 +1066,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
                                                   ),
                                                   tooltip:
                                                       'Select profiles for this session',
-                                                  onPressed: () =>
-                                                      _pickProfilesForSession(
-                                                          key),
+                                                  onPressed: () => _pickProfilesForSession(key, bySession[key] ?? const <EventSlot>[]),
                                                 ),
                                               ],
                                             ),

@@ -509,7 +509,7 @@ double? _pickedLng;
     if (url.startsWith('http')) return NetworkImage(url);
 
     // Fallback to your placeholder asset
-    return const AssetImage('assets/placeholders/event.jpg');
+    return const AssetImage('assets/keepbusy_logo.png');
   }
 
   Future<Set<DateTime>?> _pickDates(Set<DateTime> initial) async {

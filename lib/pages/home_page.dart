@@ -223,16 +223,14 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   }
 
   Future<void> _initDb() async {
-    await ProfilesRepositoryIsar
-.init(); // Initializes Isar
-    final profiles = await ProfilesRepositoryIsar
-.loadProfiles();
+  await ProfilesRepositoryIsar.init();
+  final profiles = await ProfilesRepositoryIsar.loadProfiles();
 
-    if (!mounted) return;
-    setState(() => _profiles = profiles);
+  if (!mounted) return;
+  setState(() => _profiles = profiles);
 
-    await _initDbAndLoad(); // loads events
-  }
+  await _initDbAndLoad(); // loads events
+}
 
   Future<void> _handleSave(Profile profile) async {
     await ProfilesRepositoryIsar
@@ -254,63 +252,26 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   }
 
   Future<void> _handleDelete(Profile profile) async {
-    // 1) Pull a fresh list from DB (so we have real ids)
-    final all = await ProfilesRepositoryIsar
-.loadProfiles();
-    debugPrint('DELETE REQUEST: id=${profile.id}, first=${profile.firstName}');
+  // count before
+  final before = (await ProfilesRepositoryIsar.loadProfiles()).length;
 
-    // 2) Try to find the target row to delete
-    Profile? target;
+  await ProfilesRepositoryIsar.deleteProfile(profile);
 
-    // Prefer match by id if present
-    if (profile.id > 0) {
-      for (final p in all) {
-        if (p.id == profile.id) {
-          target = p;
-          break;
-        }
-      }
-    }
+  // reload after
+  final fresh = await ProfilesRepositoryIsar.loadProfiles();
+  if (!mounted) return;
+  setState(() => _profiles = fresh);
 
-    // Fallback: match by stable fields
-    bool sameStr(String? a, String? b) => (a ?? '').trim() == (b ?? '').trim();
-    if (target == null) {
-      for (final p in all) {
-        final same =
-            sameStr(p.firstName, profile.firstName) &&
-            sameStr(p.lastName, profile.lastName) &&
-            p.birthdate == profile.birthdate &&
-            sameStr(p.nickname, profile.nickname);
-        if (same) {
-          target = p;
-          break;
-        }
-      }
-    }
+  final after = fresh.length;
 
-    // 3) If we still can't identify it, tell the user and bail
-    if (target == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not locate this profile to delete')),
-      );
-      return;
-    }
-
-    // 4) Delete that ONE row by id
-    await ProfilesRepositoryIsar
-.deleteProfile(target);
-
-    // 5) Reload from DB so UI matches exactly
-    final fresh = await ProfilesRepositoryIsar
-.loadProfiles();
-    if (!mounted) return;
-    setState(() => _profiles = fresh);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile deleted')),
-    );
-  }
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        after < before ? 'Profile deleted' : 'Could not locate this profile to delete',
+      ),
+    ),
+  );
+}
 
   // === EVENTS DATABASE ===
   Future<void> _initDbAndLoad() async {
@@ -401,28 +362,22 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
         break;
 
       case 1:
-        page = ProfilesPage(
-          profiles: _profiles,
-          onUpdate: (index, updated) async {
-  await _handleSave(updated);
-  final fresh = await ProfilesRepositoryIsar.loadProfiles();
-  if (!mounted) return;
-  setState(() => _profiles = fresh);
-},
+  page = ProfilesPage(
+    profiles: _profiles,
 
-          onAdd: (newProfile) async {
-            await ProfilesRepositoryIsar
-.saveProfile(newProfile);
-            final fresh = await ProfilesRepositoryIsar
-.loadProfiles();
-            if (!mounted) return;
-            setState(() => _profiles = fresh);
-          },
-          onDelete: (p) async {
-            await _handleDelete(p);
-          },
-        );
-        break;
+    onUpdate: (index, updated) async {
+      await _handleSave(updated); // handles save + updates UI list
+    },
+
+    onAdd: (newProfile) async {
+      await _handleSave(newProfile); // same path for add
+    },
+
+    onDelete: (p) async {
+      await _handleDelete(p); // handles delete + reloads list
+    },
+  );
+  break;
 
       case 2:
         page = CalendarPage(
