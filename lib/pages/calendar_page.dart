@@ -377,6 +377,26 @@ void initState() {
   _rebuildIndex();
 }
 
+@override
+void didUpdateWidget(covariant CalendarPage oldWidget) {
+  super.didUpdateWidget(oldWidget);
+
+  // Rebuild markers when events or selections change
+  if (!identical(oldWidget.events, widget.events) ||
+      !identical(oldWidget.sessionSelections, widget.sessionSelections) ||
+      oldWidget.profiles.length != widget.profiles.length) {
+    _rebuildIndex();
+  }
+
+  // Safety: keep selected profile index valid
+  if (_profileIndex >= widget.profiles.length) {
+    setState(() {
+      _profileIndex = 0;
+      _viewAll = true;
+      _selectedProfiles.clear();
+    });
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -556,13 +576,6 @@ final visibleItems = _viewAll
 
 
 
-DateTime _startOfWeek(DateTime d) {
-  // Monday-based week start
-  final key = _dayKey(d);
-  final delta = (key.weekday + 6) % 7; // Mon=0 ... Sun=6
-  return key.subtract(Duration(days: delta));
-}
-
 Widget weekView() {
   // Monday-based start of week
   DateTime startOfWeek(DateTime d) {
@@ -588,7 +601,7 @@ Widget weekView() {
         crossAxisCount: 7,           // ✅ 7 vertical columns
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
-        childAspectRatio: 0.25,      // ✅ taller blocks (smaller = taller)
+        childAspectRatio: 0.18,      // ✅ taller blocks (smaller = taller)
       ),
       itemCount: 7,
       itemBuilder: (_, i) {
@@ -714,7 +727,7 @@ Widget weekView() {
 
 
     Widget dayList() {
-  final day = _selectedDay ?? _dayKey(_focusedDay ?? _shown);
+  final day = _selectedDay ?? _dayKey(_focusedDay);
 
   // Selected-items for that day
   final itemsForDay = _itemsForDay(day);
