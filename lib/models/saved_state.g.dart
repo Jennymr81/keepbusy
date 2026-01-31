@@ -26,6 +26,11 @@ const SavedStateSchema = CollectionSchema(
       id: 1,
       name: r'sessionSelectionsJson',
       type: IsarType.string,
+    ),
+    r'slotSelectionsJson': PropertySchema(
+      id: 2,
+      name: r'slotSelectionsJson',
+      type: IsarType.string,
     )
   },
   estimateSize: _savedStateEstimateSize,
@@ -50,6 +55,7 @@ int _savedStateEstimateSize(
   var bytesCount = offsets.last;
   bytesCount += 3 + object.favoriteEventIdsJson.length * 3;
   bytesCount += 3 + object.sessionSelectionsJson.length * 3;
+  bytesCount += 3 + object.slotSelectionsJson.length * 3;
   return bytesCount;
 }
 
@@ -61,6 +67,7 @@ void _savedStateSerialize(
 ) {
   writer.writeString(offsets[0], object.favoriteEventIdsJson);
   writer.writeString(offsets[1], object.sessionSelectionsJson);
+  writer.writeString(offsets[2], object.slotSelectionsJson);
 }
 
 SavedState _savedStateDeserialize(
@@ -73,6 +80,7 @@ SavedState _savedStateDeserialize(
   object.favoriteEventIdsJson = reader.readString(offsets[0]);
   object.id = id;
   object.sessionSelectionsJson = reader.readString(offsets[1]);
+  object.slotSelectionsJson = reader.readString(offsets[2]);
   return object;
 }
 
@@ -86,6 +94,8 @@ P _savedStateDeserializeProp<P>(
     case 0:
       return (reader.readString(offset)) as P;
     case 1:
+      return (reader.readString(offset)) as P;
+    case 2:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -508,6 +518,142 @@ extension SavedStateQueryFilter
       ));
     });
   }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'slotSelectionsJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'slotSelectionsJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'slotSelectionsJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'slotSelectionsJson',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'slotSelectionsJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'slotSelectionsJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'slotSelectionsJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'slotSelectionsJson',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'slotSelectionsJson',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      slotSelectionsJsonIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'slotSelectionsJson',
+        value: '',
+      ));
+    });
+  }
 }
 
 extension SavedStateQueryObject
@@ -543,6 +689,20 @@ extension SavedStateQuerySortBy
       sortBySessionSelectionsJsonDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sessionSelectionsJson', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy>
+      sortBySlotSelectionsJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'slotSelectionsJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy>
+      sortBySlotSelectionsJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'slotSelectionsJson', Sort.desc);
     });
   }
 }
@@ -588,6 +748,20 @@ extension SavedStateQuerySortThenBy
       return query.addSortBy(r'sessionSelectionsJson', Sort.desc);
     });
   }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy>
+      thenBySlotSelectionsJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'slotSelectionsJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy>
+      thenBySlotSelectionsJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'slotSelectionsJson', Sort.desc);
+    });
+  }
 }
 
 extension SavedStateQueryWhereDistinct
@@ -604,6 +778,14 @@ extension SavedStateQueryWhereDistinct
       distinctBySessionSelectionsJson({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'sessionSelectionsJson',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QDistinct> distinctBySlotSelectionsJson(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'slotSelectionsJson',
           caseSensitive: caseSensitive);
     });
   }
@@ -628,6 +810,13 @@ extension SavedStateQueryProperty
       sessionSelectionsJsonProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'sessionSelectionsJson');
+    });
+  }
+
+  QueryBuilder<SavedState, String, QQueryOperations>
+      slotSelectionsJsonProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'slotSelectionsJson');
     });
   }
 }

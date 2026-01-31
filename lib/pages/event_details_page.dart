@@ -98,18 +98,36 @@ Map<int, Set<int>> _buildSessionSelectionsFromSlots() {
   return out;
 }
 
-  @override
-  void initState() {
-    super.initState();
-    _event = widget.event;
+@override
+void initState() {
+  super.initState();
+  _event = widget.event;
 
-    // start from whatever the parent passed in (if anything)
-    _slotSelectedProfileIndexes = {
-  for (final entry in widget.sessionSelections.entries)
-    entry.key: Set<int>.from(entry.value),
-};
+  // Local copy used to drive immediate UI checkmarks
+  _sessionSelectedProfileIndexes = {
+    for (final entry in widget.sessionSelections.entries)
+      entry.key: Set<int>.from(entry.value),
+  };
 
+  // Slot selections are the source of truth; this will be filled by your existing logic
+  _slotSelectedProfileIndexes = {};
+}
+
+@override
+void didUpdateWidget(covariant EventDetailsPage oldWidget) {
+  super.didUpdateWidget(oldWidget);
+
+  // If parent provides updated session selections, refresh local UI map
+  if (!identical(oldWidget.sessionSelections, widget.sessionSelections)) {
+    setState(() {
+      _sessionSelectedProfileIndexes = {
+        for (final entry in widget.sessionSelections.entries)
+          entry.key: Set<int>.from(entry.value),
+      };
+    });
   }
+}
+
 
   /// Pretty label for a profile index (nickname > full name > fallback).
   String _profileLabel(int index) {
@@ -364,9 +382,12 @@ Map<int, Set<int>> _buildSessionSelectionsFromSlots() {
       final first = list.first.date;
       final last = list.last.date;
 
-      final selected =
-          _sessionSelectedProfileIndexes[key] ?? const <int>{};
-      if (selected.isEmpty) continue; // nothing selected => no card
+      final selected = <int>{};
+for (final s in list) {
+  final sid = s.id;
+  if (sid == 0) continue;
+  selected.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
+}
 
       final days = daysLabel(list);
       final time = timeLabel(list);
@@ -494,7 +515,9 @@ Map<int, Set<int>> _buildSessionSelectionsFromSlots() {
                             '${p.firstName ?? ''} ${p.lastName ?? ''}'.trim();
                         final label = nickname.isNotEmpty
                             ? nickname
-                            : (fullName.isNotEmpty ? fullName : 'Profile ${i + 1}');
+                            : (fullName.isNotEmpty
+                                ? fullName
+                                : 'Profile ${i + 1}');
 
                         return CheckboxListTile(
                           value: checked,
@@ -539,15 +562,20 @@ Map<int, Set<int>> _buildSessionSelectionsFromSlots() {
   if (result == null) return;
 
   // ✅ Write the same selected set to EACH slot in this session
+  // ✅ AND refresh the session-level UI cache so the checkbox flips immediately
   setState(() {
     for (final sid in slotIds) {
       _slotSelectedProfileIndexes[sid] = Set<int>.from(result);
     }
+
+    // Keep the legacy session map in sync for immediate UI updates
+    _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
   });
 
   // ✅ Notify parent using SESSION -> profiles (union across slots)
   widget.onUpdateSessionSelections?.call(_buildSessionSelectionsFromSlots());
 }
+
 
   @override
   Widget build(BuildContext context) {

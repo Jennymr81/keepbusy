@@ -3,7 +3,6 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:isar/isar.dart';
@@ -28,24 +27,20 @@ import '../models/profile.dart';
 import '../models/profile_color_ext.dart';
 import '../repositories/local/profiles_repository_isar.dart';
 
-// ✅ Profile preview popup (import as a prefix so it can NEVER collide / “not be found”)
+// ✅ Profile preview popup (prefix import so it can NEVER collide)
 import '../widgets/profile_preview_dialog_kb.dart' as profilePreview;
-
-
-
 
 ///HELPERS///
 ImageProvider savedImageProvider(String? path) {
   final p = (path ?? '').trim();
 
-  // ✅ Use an asset you KNOW exists (avoids the profile_placeholder.png error)
+  // ✅ Use an asset you KNOW exists
   const fallback = AssetImage('assets/keepbusy_logo.png');
 
   if (p.isEmpty) return fallback;
   if (p.startsWith('http')) return NetworkImage(p);
   if (p.startsWith('assets/')) return AssetImage(p);
 
-  // If it's some other string, just fall back safely for now.
   return fallback;
 }
 
@@ -60,7 +55,7 @@ class KeepBusyHomePage extends StatefulWidget {
 }
 
 class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
-  /// === PROFILES (USING ISAR SERVICE) ===
+  /// === PROFILES / EVENTS ===
   List<Profile> _profiles = [];
   List<Event> _events = [];
 
@@ -68,8 +63,38 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   final Set<Id> _favoriteEventIds = <Id>{};
   final Set<Id> _selectedEventIds = <Id>{};
 
+  // ✅ Source of truth (persisted):
+  // slotId -> set of profile indexes into _profiles
+  final Map<int, Set<int>> _slotSelections = <int, Set<int>>{};
+
+  // ✅ Derived (not persisted):
   // eventId -> (sessionIndex -> set of profile indexes into _profiles)
-  Map<Id, Map<int, Set<int>>> _sessionSelections = {};
+  //
+  // SessionIndex is defined as the slot's index in a stable ordering (by slotId).
+  // This keeps Calendar/Saved/Search working while you finish migrating those pages.
+  Map<Id, Map<int, Set<int>>> get sessionSelections {
+    final out = <Id, Map<int, Set<int>>>{};
+
+    for (final ev in _events) {
+      final slots = ev.slotIds.toList();
+      if (slots.isEmpty) continue;
+
+      // stable order so sessionIndex doesn't jump around
+      slots.sort((a, b) => a.id.compareTo(b.id));
+
+      final sessions = <int, Set<int>>{};
+      for (var i = 0; i < slots.length; i++) {
+        final slotId = slots[i].id;
+        final profSet = _slotSelections[slotId];
+        if (profSet == null || profSet.isEmpty) continue;
+        sessions[i] = Set<int>.from(profSet);
+      }
+
+      if (sessions.isNotEmpty) out[ev.id] = sessions;
+    }
+
+    return out;
+  }
 
   int idx = 0;
 
@@ -82,12 +107,40 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     final isar = await getIsar();
     final fresh = await isar.events.where().findAll();
 
+    // IMPORTANT: keep slotIds loaded so selections can be derived reliably
+    for (final e in fresh) {
+      await e.slotIds.load();
+    }
+
     if (!mounted) return;
     setState(() => _events = fresh);
   }
 
-  // Load persisted session selections from local storage
-  Future<void> _loadSessionSelectionsFromPrefs() async {
+
+  // ============================
+  // SAVED STATE (Isar singleton)
+  // Source of truth: slotId -> profileIndexes
+  // ============================
+
+  Set<Id> _eventIdsFromSlotSelections() {
+    // Build slotId -> eventId lookup from in-memory events (slotIds must be loaded).
+    final slotToEventId = <int, int>{};
+
+    for (final ev in _events) {
+      for (final s in ev.slotIds.toList()) {
+        slotToEventId[s.id] = ev.id;
+      }
+    }
+
+    final out = <Id>{};
+    for (final slotId in _slotSelections.keys) {
+      final eventId = slotToEventId[slotId];
+      if (eventId != null) out.add(eventId as Id);
+    }
+    return out;
+  }
+
+  Future<void> _loadSlotSelectionsFromPrefs() async {
     try {
       final loaded = await SavedRepositoryIsar.load();
 
@@ -95,14 +148,19 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
       setState(() {
         _favoriteEventIds
           ..clear()
-          ..addAll(loaded.favoriteEventIds);
+          ..addAll(loaded.favoriteEventIds.cast<Id>());
 
-        _sessionSelections = loaded.sessionSelections;
+        _slotSelections
+          ..clear()
+          ..addAll(
+            loaded.slotSelections.map(
+              (slotId, profSet) => MapEntry(slotId, Set<int>.from(profSet)),
+            ),
+          );
 
-        // keep _selectedEventIds in sync with saved sessions
         _selectedEventIds
           ..clear()
-          ..addAll(_sessionSelections.keys);
+          ..addAll(_eventIdsFromSlotSelections());
       });
     } catch (e, st) {
       debugPrint('Failed to load saved state: $e');
@@ -110,14 +168,13 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     }
   }
 
-  
-
-  // Save current selections to local storage
-  Future<void> _saveSessionSelectionsToPrefs() async {
+  Future<void> _saveSlotSelectionsToPrefs() async {
     try {
       await SavedRepositoryIsar.save(
-        favoriteEventIds: _favoriteEventIds,
-        sessionSelections: _sessionSelections,
+        favoriteEventIds: _favoriteEventIds.map((e) => e.toInt()).toSet(),
+        slotSelections: _slotSelections.map(
+          (slotId, profSet) => MapEntry(slotId, Set<int>.from(profSet)),
+        ),
       );
     } catch (e, st) {
       debugPrint('Failed to save saved state: $e');
@@ -134,24 +191,32 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
       }
     });
 
-    _saveSessionSelectionsToPrefs(); // persist favorites too
+    _saveSlotSelectionsToPrefs();
   }
 
   void _toggleSelectedEvent(Event e, bool isSelected) {
+    // Selected event is derived from slot selections.
+    // If unselected: remove all slot selections belonging to this event.
     setState(() {
-      if (isSelected) {
-        _selectedEventIds.add(e.id);
-      } else {
-        _selectedEventIds.remove(e.id);
-        // Optional: if unselecting the whole event should also clear saved sessions:
-        // _sessionSelections.remove(e.id);
+      if (!isSelected) {
+        final slotIds = e.slotIds.toList().map((s) => s.id).toSet();
+        _slotSelections.removeWhere((slotId, _) => slotIds.contains(slotId));
       }
+
+      _selectedEventIds
+        ..clear()
+        ..addAll(_eventIdsFromSlotSelections());
     });
 
-    _saveSessionSelectionsToPrefs();
+    _saveSlotSelectionsToPrefs();
   }
 
-  ///////////**** CSV EXPORT ****//////////////////
+
+
+  // ============================
+  // CSV EXPORT
+  // ============================
+
   Future<void> _exportEventsToCsv() async {
     final isar = await getIsar();
     final events = await isar.events.where().findAll();
@@ -171,7 +236,8 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     ];
 
     final rows = events.map((e) {
-      final dateStr = e.date == null ? '' : e.date!.toIso8601String().split('T').first;
+      final dateStr =
+          e.date == null ? '' : e.date!.toIso8601String().split('T').first;
 
       return <String?>[
         e.id.toString(),
@@ -214,27 +280,37 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
       ),
     );
   }
+  // ============================
+  // INIT
+  // ============================
 
-  @override
-  void initState() {
-    super.initState();
-    _initDb();
-    _loadSessionSelectionsFromPrefs();
-  }
+@override
+void initState() {
+  super.initState();
+  _initDb(); // ✅ fine as-is
+}
 
-  Future<void> _initDb() async {
+
+Future<void> _initDb() async {
   await ProfilesRepositoryIsar.init();
   final profiles = await ProfilesRepositoryIsar.loadProfiles();
 
   if (!mounted) return;
   setState(() => _profiles = profiles);
 
-  await _initDbAndLoad(); // loads events
+  await _initDbAndLoad();
+  if (!mounted) return;
+
+  await _loadSlotSelectionsFromPrefs();
 }
 
+
+  // ============================
+  // PROFILES
+  // ============================
+
   Future<void> _handleSave(Profile profile) async {
-    await ProfilesRepositoryIsar
-.saveProfile(profile);
+    await ProfilesRepositoryIsar.saveProfile(profile);
 
     setState(() {
       final index = _profiles.indexWhere((p) => p.id == profile.id);
@@ -252,28 +328,33 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   }
 
   Future<void> _handleDelete(Profile profile) async {
-  // count before
-  final before = (await ProfilesRepositoryIsar.loadProfiles()).length;
+    // count before
+    final before = (await ProfilesRepositoryIsar.loadProfiles()).length;
 
-  await ProfilesRepositoryIsar.deleteProfile(profile);
+    await ProfilesRepositoryIsar.deleteProfile(profile);
 
-  // reload after
-  final fresh = await ProfilesRepositoryIsar.loadProfiles();
-  if (!mounted) return;
-  setState(() => _profiles = fresh);
+    // reload after
+    final fresh = await ProfilesRepositoryIsar.loadProfiles();
+    if (!mounted) return;
+    setState(() => _profiles = fresh);
 
-  final after = fresh.length;
+    final after = fresh.length;
 
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(
-        after < before ? 'Profile deleted' : 'Could not locate this profile to delete',
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          after < before
+              ? 'Profile deleted'
+              : 'Could not locate this profile to delete',
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-  // === EVENTS DATABASE ===
+  // ============================
+  // EVENTS DB
+  // ============================
+
   Future<void> _initDbAndLoad() async {
     try {
       final isar = await getIsar();
@@ -295,15 +376,65 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     }
   }
 
+  /// Helper: event -> loaded slots list (uses your Isar links: slotIds)
+  List<EventSlot> _slotsOfEvent(Event e) {
+    // slotIds is an IsarLinks<EventSlot>; after load() it is iterable.
+    return e.slotIds.toList();
+  }
+
+  /// Derive "session selections" view from slot selections.
+  /// This preserves your existing Calendar/Saved/Search page interfaces while
+  /// moving persistence to slotId -> profileIndexes.
+  ///
+  /// SessionIndex is defined as the index of the slot in a stable ordering (by slotId).
+  /// If you later want "sessionIndex" to mean something else (e.g. group by date/time),
+  /// we can change the ordering/grouping here without touching persistence.
+  Map<int, Map<int, Set<int>>> _derivedSessionSelectionsByEvent() {
+    final out = <int, Map<int, Set<int>>>{};
+
+    for (final ev in _events) {
+      final slots = _slotsOfEvent(ev);
+      if (slots.isEmpty) continue;
+
+      // Stable ordering; avoid relying on unknown slot fields.
+      slots.sort((a, b) => a.id.compareTo(b.id));
+
+      final sessions = <int, Set<int>>{};
+      for (var i = 0; i < slots.length; i++) {
+        final slotId = slots[i].id;
+        final profSet = _slotSelections[slotId];
+        if (profSet == null || profSet.isEmpty) continue;
+
+        // sessionIndex == i (slot's index in sorted list)
+        sessions[i] = Set<int>.from(profSet);
+      }
+
+      if (sessions.isNotEmpty) out[ev.id] = sessions;
+    }
+
+    return out;
+  }
+
   void _handleEventDeletedFromSearch(Id deletedId) {
     setState(() {
+      // Capture slotIds for the event BEFORE removing it
+      final deletedSlotIds = <int>{};
+      final toDelete = _events.where((e) => e.id == deletedId).toList();
+      if (toDelete.isNotEmpty) {
+        for (final s in _slotsOfEvent(toDelete.first)) {
+          deletedSlotIds.add(s.id);
+        }
+      }
+
       _events.removeWhere((ev) => ev.id == deletedId);
       _favoriteEventIds.remove(deletedId);
       _selectedEventIds.remove(deletedId);
-      _sessionSelections.remove(deletedId);
+
+      // Remove any slot selections that belonged to the deleted event
+      _slotSelections.removeWhere((slotId, _) => deletedSlotIds.contains(slotId));
     });
 
-    _saveSessionSelectionsToPrefs();
+    _saveSlotSelectionsToPrefs();
   }
 
   Future<Event?> _loadEventWithSlots(Id id) async {
@@ -313,7 +444,7 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     return ev;
   }
 
-  void _addEvent() async {
+  Future<void> _addEvent() async {
     final created = await Navigator.of(context).push<Map<String, dynamic>?>(
       MaterialPageRoute(
         builder: (_) => EventEntryFormPage(
@@ -344,6 +475,10 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     showSnack('Event created');
   }
 
+  // ============================
+  // NAV
+  // ============================
+
   static const _dest = [
     (Icons.home, 'Home'),
     (Icons.people, 'Profiles'),
@@ -352,8 +487,15 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     (Icons.search, 'Search'),
   ];
 
+  // ============================
+  // BUILD
+  // ============================
+
   @override
   Widget build(BuildContext context) {
+    // Derived view used by Calendar/Saved/Search while persistence is slot-based
+    final sessionSelections = _derivedSessionSelectionsByEvent();
+
     Widget page;
 
     switch (idx) {
@@ -362,22 +504,13 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
         break;
 
       case 1:
-  page = ProfilesPage(
-    profiles: _profiles,
-
-    onUpdate: (index, updated) async {
-      await _handleSave(updated); // handles save + updates UI list
-    },
-
-    onAdd: (newProfile) async {
-      await _handleSave(newProfile); // same path for add
-    },
-
-    onDelete: (p) async {
-      await _handleDelete(p); // handles delete + reloads list
-    },
-  );
-  break;
+        page = ProfilesPage(
+          profiles: _profiles,
+          onUpdate: (index, updated) async => _handleSave(updated),
+          onAdd: (newProfile) async => _handleSave(newProfile),
+          onDelete: (p) async => _handleDelete(p),
+        );
+        break;
 
       case 2:
         page = CalendarPage(
@@ -414,20 +547,25 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
             );
           },
           onAddEvent: _addEvent,
-          sessionSelections: _sessionSelections,
+
+          // ✅ still satisfies CalendarPage signature for now
+          sessionSelections: sessionSelections,
         );
         break;
 
       case 3:
         final savedEvents = _events.where((e) {
-          final m = _sessionSelections[e.id];
+          final m = sessionSelections[e.id];
           return m != null && m.isNotEmpty;
         }).toList();
 
         page = SavedPage(
           profiles: _profiles,
           events: savedEvents,
-          sessionSelectionsByEvent: _sessionSelections,
+
+          // ✅ still satisfies SavedPage signature for now
+          sessionSelectionsByEvent: sessionSelections,
+
           onOpenEvent: (e) async {
             final full = await _loadEventWithSlots(e.id);
             if (full == null) {
@@ -439,56 +577,96 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
               return;
             }
 
-            final selIndexOK = (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
-            final sel = selIndexOK ? _profiles[e.profileIndex] : (_profiles.isNotEmpty ? _profiles.first : null);
+            final selIndexOK =
+                (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
+            final sel = selIndexOK
+                ? _profiles[e.profileIndex]
+                : (_profiles.isNotEmpty ? _profiles.first : null);
 
             if (!context.mounted) return;
 
             final eventId = full.id;
 
-            Navigator.of(context).push(
+            // Push details. Details page writes slot selections.
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => EventDetailsPage(
                   event: full,
                   profile: sel,
                   profiles: _profiles,
-                  sessionSelections: _sessionSelections[eventId] ?? const <int, Set<int>>{},
-                  onUpdateSessionSelections: (map) {
-                    setState(() {
-                      if (map.isEmpty) {
-                        _sessionSelections.remove(eventId);
-                        _selectedEventIds.remove(eventId);
-                      } else {
-                        _sessionSelections[eventId] = {
-                          for (final entry in map.entries) entry.key: Set<int>.from(entry.value),
-                        };
-                        _selectedEventIds.add(eventId);
-                      }
-                    });
-                    _saveSessionSelectionsToPrefs();
-                  },
+
+                  // For UI display only (derived)
+                  sessionSelections:
+                      sessionSelections[eventId] ?? const <int, Set<int>>{},
+
+onUpdateSessionSelections: (map) async {
+  final slots = _slotsOfEvent(full)..sort((a, b) => a.id.compareTo(b.id));
+
+  setState(() {
+    // MERGE behavior:
+    // update only the sessions present in `map`, don't clear other sessions.
+    for (final entry in map.entries) {
+      final sessionIndex = entry.key;
+      if (sessionIndex < 0 || sessionIndex >= slots.length) continue;
+
+      final slotId = slots[sessionIndex].id;
+      final profSet = entry.value;
+
+      if (profSet.isEmpty) {
+        // If cleared, remove this one slot selection
+        _slotSelections.remove(slotId);
+      } else {
+        // Otherwise set/replace this one slot's selection
+        _slotSelections[slotId] = Set<int>.from(profSet);
+      }
+    }
+
+    // Rebuild selected events from slot selections
+    _selectedEventIds
+      ..clear()
+      ..addAll(_eventIdsFromSlotSelections().cast<Id>());
+  });
+
+  await _saveSlotSelectionsToPrefs();
+},
+
+
                 ),
               ),
             );
-          },
-          onUnselectSession: (eventId, sessionIndex) {
-            setState(() {
-              final map = _sessionSelections[eventId];
-              if (map == null) return;
 
-              map.remove(sessionIndex);
-              if (map.isEmpty) {
-                _sessionSelections.remove(eventId);
-                _selectedEventIds.remove(eventId);
-              }
+            // After returning, refresh slot selections (source of truth)
+            await _loadSlotSelectionsFromPrefs();
+          },
+
+          onUnselectSession: (eventId, sessionIndex) {
+            // Map sessionIndex -> slotId using the same stable ordering used by derivation.
+            final ev = _events.where((x) => x.id == eventId).toList();
+            if (ev.isEmpty) return;
+
+            final slots = _slotsOfEvent(ev.first)..sort((a, b) => a.id.compareTo(b.id));
+            if (sessionIndex < 0 || sessionIndex >= slots.length) return;
+
+            final slotId = slots[sessionIndex].id;
+
+            setState(() {
+              _slotSelections.remove(slotId);
+              _selectedEventIds
+                ..clear()
+                ..addAll(_events
+                    .where((e) => _derivedSessionSelectionsByEvent()[e.id]?.isNotEmpty ?? false)
+                    .map((e) => e.id));
             });
-            _saveSessionSelectionsToPrefs();
+
+            _saveSlotSelectionsToPrefs();
           },
         );
         break;
 
       case 4:
         page = SimpleSearchPage(
+  key: ValueKey('search_${_slotSelections.length}_${_favoriteEventIds.length}'),
+
           profiles: _profiles,
           events: _events,
           loadById: _loadEventWithSlots,
@@ -508,31 +686,63 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
               return;
             }
 
-            final selIndexOK = (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
-            final sel = selIndexOK ? _profiles[e.profileIndex] : (_profiles.isNotEmpty ? _profiles.first : null);
+            final selIndexOK =
+                (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
+            final sel = selIndexOK
+                ? _profiles[e.profileIndex]
+                : (_profiles.isNotEmpty ? _profiles.first : null);
 
             if (!context.mounted) return;
 
             final eventId = full.id;
 
-            Navigator.of(context).push(
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => EventDetailsPage(
                   event: full,
                   profile: sel,
                   profiles: _profiles,
-                  sessionSelections: _sessionSelections[eventId] ?? const <int, Set<int>>{},
+
+                  // For UI display only (derived)
+                  sessionSelections:
+                      sessionSelections[eventId] ?? const <int, Set<int>>{},
+
                   onUpdateSessionSelections: (map) {
-                    setState(() {
-                      _sessionSelections[eventId] = {
-                        for (final entry in map.entries) entry.key: Set<int>.from(entry.value),
-                      };
-                    });
-                    _saveSessionSelectionsToPrefs();
-                  },
+  // Translate legacy sessionIndex -> profiles into slotId -> profiles (source of truth)
+  final slots = _slotsOfEvent(full)..sort((a, b) => a.id.compareTo(b.id));
+
+  setState(() {
+    // 1) clear existing selections for THIS event
+    final eventSlotIds = slots.map((s) => s.id).toSet();
+    _slotSelections.removeWhere((slotId, _) => eventSlotIds.contains(slotId));
+
+    // 2) apply new selections based on sessionIndex -> slotId mapping
+    for (final entry in map.entries) {
+      final sessionIndex = entry.key;
+      if (sessionIndex < 0 || sessionIndex >= slots.length) continue;
+
+      final slotId = slots[sessionIndex].id;
+      final profSet = entry.value;
+      if (profSet.isEmpty) continue;
+
+      _slotSelections[slotId] = Set<int>.from(profSet);
+    }
+
+    // 3) rebuild selected events
+    _selectedEventIds
+      ..clear()
+      ..addAll(_eventIdsFromSlotSelections());
+  });
+
+  _saveSlotSelectionsToPrefs();
+},
+
                 ),
               ),
             );
+
+            // After returning, refresh slot selections (source of truth)
+            await _loadSlotSelectionsFromPrefs();
           },
         );
         break;
@@ -588,7 +798,8 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
           bottomNavigationBar: NavigationBar(
             selectedIndex: idx,
             destinations: [
-              for (final d in _dest) NavigationDestination(icon: Icon(d.$1), label: d.$2),
+              for (final d in _dest)
+                NavigationDestination(icon: Icon(d.$1), label: d.$2),
             ],
             onDestinationSelected: (i) => setState(() => idx = i),
           ),
@@ -596,305 +807,296 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
       },
     );
   }
-  
-// ==============================
-// HOME WIDGETS (SCROLL AREA)
-// ==============================
-Widget _home() => SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-        child: Center(
-          // ✅ centers the entire "page content area"
-          child: ConstrainedBox(
-            // ✅ keeps layout nice on wide screens
-            constraints: const BoxConstraints(maxWidth: 1100),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 10),
-
-// ✅ logo centered, small, above the tagline
-Center(
-  child: Image.asset(
-    'assets/keepbusy_logo.png',
-    height: 34, // small like before (adjust 30–42 if you want)
-    fit: BoxFit.contain,
-  ),
-),
-
-const SizedBox(height: 6),
-
-Text(
-  'Community Classes & Events',
-  textAlign: TextAlign.center,
-  style: Theme.of(context).textTheme.headlineMedium,
-),
-const SizedBox(height: 12),
-
-                // ✅ Frosted header search (FULL toolbar like search page)
-                // ✅ No hero image behind it
-                QuickSearchBar(
-                  profiles: _profiles,
-                  compact: false,
-                  showToolbar: true, // Sort / Advanced / Favorites / Selected
-                ),
-          
-
-            const SizedBox(height: 18),
-
-             // ===== PROFILES PREVIEW (responsive + pictures) =====
-_DashSection(
-  title: 'Profiles',
-  trailing: TextButton(
-    onPressed: () => setState(() => idx = 1),
-    child: const Text('See all'),
-  ),
-  child: _profiles.isEmpty
-      ? _EmptyDashCard(
-          text: 'No profiles yet. Add one to get started.',
-          buttonText: 'Add profile',
-          onTap: () => setState(() => idx = 1),
-        )
-      : Align(
-    alignment: Alignment.centerLeft,
-    child: _ResponsiveHCarousel(
-      itemCount: (_profiles.length > 12) ? 12 : _profiles.length,
-
-      // ✅ tighter even on wide screens
-      itemWidth: 140,
-      itemHeight: 200,
-
-      twoUpOnNarrow: true,
-      gap: 4,                 // ✅ smaller spacing
-      arrowGutter: 38,        // ✅ use less “wasted” side space
-
-      buildItem: (i) {
-        final p = _profiles[i];
-        return _MiniProfileCard(
-  label: profileLabel(p),
-  color: p.color,
-  imageProvider: savedImageProvider(_profileImagePath(p)),
-onTap: () {
-  profilePreview.openProfilePreviewDialog(
-    context: context,
-    profile: p,
-    color: p.color,
-    avatarProvider: savedImageProvider(_profileImagePath(p)),
-  );
-},
 
 
-);
-      },
-    ),
-  ),
+  // ==============================
+  // HOME WIDGETS (SCROLL AREA)
+  // ==============================
+  Widget _home() => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 10),
 
+                  // ✅ logo centered
+                  Center(
+                    child: Image.asset(
+                      'assets/keepbusy_logo.png',
+                      height: 34,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
 
+                  const SizedBox(height: 6),
 
-),
+                  Text(
+                    'Community Classes & Events',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
 
-const SizedBox(height: 18),
+                  const SizedBox(height: 12),
 
-// ===== CALENDAR PREVIEW (ONLY week strips, no extra title/cards) =====
-_DashSection(
-  title: 'Calendar',
-  trailing: TextButton(
-    onPressed: () => setState(() => idx = 2),
-    child: const Text('Open'),
-  ),
-  child: _sessionSelections.isEmpty
-      ? _EmptyDashCard(
-          text: 'No saved sessions yet.',
-          buttonText: 'Go to search',
-          onTap: () => setState(() => idx = 4),
-        )
-      : _ResponsiveWeekStrip(
-          focusDate: DateTime.now(),
-          itemsByDay: _pipsByDayForHomeWeekPreview(),
-          onTap: () => setState(() => idx = 2),
-        ),
-),
+                  // ✅ Frosted header search
+                  QuickSearchBar(
+                    profiles: _profiles,
+                    compact: false,
+                    showToolbar: true,
+                  ),
 
-const SizedBox(height: 18),
+                  const SizedBox(height: 18),
 
-// ===== SAVED PREVIEW (smaller cards + image, responsive) =====
-_DashSection(
-  title: 'Saved Sessions',
-  trailing: TextButton(
-    onPressed: () => setState(() => idx = 3),
-    child: const Text('See all'),
-  ),
-  child: () {
-    final savedEvents = _events.where((e) {
-      final m = _sessionSelections[e.id];
-      return m != null && m.isNotEmpty;
-    }).toList();
+                  // ===== PROFILES PREVIEW =====
+                  _DashSection(
+                    title: 'Profiles',
+                    trailing: TextButton(
+                      onPressed: () => setState(() => idx = 1),
+                      child: const Text('See all'),
+                    ),
+                    child: _profiles.isEmpty
+                        ? _EmptyDashCard(
+                            text: 'No profiles yet. Add one to get started.',
+                            buttonText: 'Add profile',
+                            onTap: () => setState(() => idx = 1),
+                          )
+                        : Align(
+                            alignment: Alignment.centerLeft,
+                            child: _ResponsiveHCarousel(
+                              itemCount:
+                                  (_profiles.length > 12) ? 12 : _profiles.length,
+                              itemWidth: 140,
+                              itemHeight: 200,
+                              twoUpOnNarrow: true,
+                              gap: 4,
+                              arrowGutter: 38,
+                              buildItem: (i) {
+                                final p = _profiles[i];
+                                return _MiniProfileCard(
+                                  label: profileLabel(p),
+                                  color: p.color,
+                                  imageProvider:
+                                      savedImageProvider(_profileImagePath(p)),
+                                  onTap: () {
+                                    profilePreview.openProfilePreviewDialog(
+                                      context: context,
+                                      profile: p,
+                                      color: p.color,
+                                      avatarProvider: savedImageProvider(
+                                          _profileImagePath(p)),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                  ),
 
-    if (savedEvents.isEmpty) {
-      return _EmptyDashCard(
-        text: 'Nothing saved yet. Select sessions from an event.',
-        buttonText: 'Find events',
-        onTap: () => setState(() => idx = 4),
-      );
-    }
+                  const SizedBox(height: 18),
 
-    final take = savedEvents.take(10).toList();
+                  // ===== CALENDAR PREVIEW (week strip) =====
+                  _DashSection(
+                    title: 'Calendar',
+                    trailing: TextButton(
+                      onPressed: () => setState(() => idx = 2),
+                      child: const Text('Open'),
+                    ),
+                    child: sessionSelections.isEmpty
+                        ? _EmptyDashCard(
+                            text: 'No saved sessions yet.',
+                            buttonText: 'Go to search',
+                            onTap: () => setState(() => idx = 4),
+                          )
+                        : _ResponsiveWeekStrip(
+                            focusDate: DateTime.now(),
+                            itemsByDay: _pipsByDayForHomeWeekPreview(),
+                            onTap: () => setState(() => idx = 2),
+                          ),
+                  ),
 
-    return Align(
-  alignment: Alignment.centerLeft,
-  child: _ResponsiveHCarousel(
-  itemCount: take.length,
-  itemWidth: 230,
-  itemHeight: 240,
-  gap: 12,
-  arrowGutter: 30,
-  wrapOnWide: false,                 // ✅ no stacking on iPad widths
-  fadeColor: const Color(0xFFF6F0ED), // ✅ same fade effect as calendar
-  buildItem: (i) {
-    final e = take[i];
-    final summary = _savedEventSummaryForHome(e);
-    return _MiniSavedQuickCard(
-      title: e.title,
-      imageProvider: eventImageProvider(e),
-      dateLine: summary.dateLine,
-      timeLine: summary.timeLine,
-      whoLine: summary.whoLine,
-      onView: () => setState(() => idx = 3),
-    );
-  },
-  )
-);
+                  const SizedBox(height: 18),
 
-  }(),
-),
+                  // ===== SAVED PREVIEW =====
+                  _DashSection(
+                    title: 'Saved Sessions',
+                    trailing: TextButton(
+                      onPressed: () => setState(() => idx = 3),
+                      child: const Text('See all'),
+                    ),
+                    child: () {
+                      final savedEvents = _events.where((e) {
+                        final m = sessionSelections[e.id];
+                        return m != null && m.isNotEmpty;
+                      }).toList();
 
-            ],
+                      if (savedEvents.isEmpty) {
+                        return _EmptyDashCard(
+                          text: 'Nothing saved yet. Select sessions from an event.',
+                          buttonText: 'Find events',
+                          onTap: () => setState(() => idx = 4),
+                        );
+                      }
+
+                      final take = savedEvents.take(10).toList();
+
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: _ResponsiveHCarousel(
+                          itemCount: take.length,
+                          itemWidth: 230,
+                          itemHeight: 240,
+                          gap: 12,
+                          arrowGutter: 30,
+                          wrapOnWide: false,
+                          fadeColor: const Color(0xFFF6F0ED),
+                          buildItem: (i) {
+                            final e = take[i];
+                            final summary = _savedEventSummaryForHome(e);
+                            return _MiniSavedQuickCard(
+                              title: e.title,
+                              imageProvider: eventImageProvider(e),
+                              dateLine: summary.dateLine,
+                              timeLine: summary.timeLine,
+                              whoLine: summary.whoLine,
+                              onView: () => setState(() => idx = 3),
+                            );
+                          },
+                        ),
+                      );
+                    }(),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
-      ),
-);
+      );
 
   /// Week preview pips for the HOME page.
   ///
   /// IMPORTANT: _sessionSelections is Map<Id, Map<int, Set<int>>>
   /// which means: event -> sessionIndex -> set(profileIndex).
   /// It does NOT contain dates, so we place pips on TODAY for now.
-  /// Later we can map sessionIndex -> EventSlot date(s).
   Map<DateTime, List<DayPip>> _pipsByDayForHomeWeekPreview() {
-  final out = <DateTime, List<DayPip>>{};
-  final now = DateTime.now();
-  final todayKey = DateTime(now.year, now.month, now.day);
+    final out = <DateTime, List<DayPip>>{};
+    final now = DateTime.now();
+    final todayKey = DateTime(now.year, now.month, now.day);
 
-  for (final entry in _sessionSelections.entries) {
-    final eventId = entry.key;
-    final perSession = entry.value; // Map<int, Set<int>>
+    for (final entry in sessionSelections.entries) {
+      final eventId = entry.key;
+      final perSession = entry.value;
 
-    // Find the event (safe)
-    Event? ev;
-    try {
-      ev = _events.firstWhere((x) => x.id == eventId);
-    } catch (_) {
-      ev = null;
+      Event? ev;
+      try {
+        ev = _events.firstWhere((x) => x.id == eventId);
+      } catch (_) {
+        ev = null;
+      }
+
+      Color c = const Color(0xFF6FC7BE);
+      try {
+        final maybe = (ev as dynamic).color;
+        if (maybe is Color) c = maybe;
+      } catch (_) {}
+
+      final title = (ev?.title ?? 'Saved event');
+
+      for (final sessIndex in perSession.keys) {
+        (out[todayKey] ??= <DayPip>[]).add(
+          DayPip(
+            color: c,
+            title: title,
+            tooltip: 'Session $sessIndex',
+          ),
+        );
+      }
     }
 
-    // Pick a color (safe)
-    Color c = const Color(0xFF6FC7BE);
-    try {
-      final maybe = (ev as dynamic).color;
-      if (maybe is Color) c = maybe;
-    } catch (_) {}
-
-    final title = (ev?.title ?? 'Saved event');
-
-    // NOTE: your saved-state does not store real dates yet, so we place items on TODAY.
-    // Add one line per saved sessionIndex (keeps list readable)
-    for (final sessIndex in perSession.keys) {
-      (out[todayKey] ??= <DayPip>[]).add(
-        DayPip(
-          color: c,
-          title: title,
-          tooltip: 'Session $sessIndex',
-        ),
-      );
+    if ((out[todayKey]?.length ?? 0) > 12) {
+      out[todayKey] = out[todayKey]!.take(12).toList();
     }
+
+    return out;
   }
-
-  // Cap for visuals in the week strip (the widget will show "+X more" if needed)
-  if ((out[todayKey]?.length ?? 0) > 12) {
-    out[todayKey] = out[todayKey]!.take(12).toList();
-  }
-
-  return out;
-}
-
-
 
   _SavedSummary _savedEventSummaryForHome(Event e) {
-  final perSession = _sessionSelections[e.id];
-  final sessionsCount = perSession?.length ?? 0;
+    final perSession = sessionSelections[e.id];
+    final sessionsCount = perSession?.length ?? 0;
 
-  // who line: up to 2 names
-  final names = <String>{};
-  if (perSession != null) {
-    for (final set in perSession.values) {
-      for (final pi in set) {
-        if (pi >= 0 && pi < _profiles.length) {
-          names.add(profileLabel(_profiles[pi]));
+    // who line: up to 2 names
+    final names = <String>{};
+    if (perSession != null) {
+      for (final set in perSession.values) {
+        for (final pi in set) {
+          if (pi >= 0 && pi < _profiles.length) {
+            names.add(profileLabel(_profiles[pi]));
+          }
         }
       }
     }
+
+    final who = names.isEmpty
+        ? 'For: —'
+        : 'For: ${names.take(2).join(', ')}${names.length > 2 ? ' +' : ''}';
+
+    String dateLine =
+        sessionsCount == 1 ? '1 session saved' : '$sessionsCount sessions saved';
+    try {
+      if (e.date != null) {
+        final d = e.date!;
+        const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const mon = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec'
+        ];
+        dateLine = '${dow[d.weekday - 1]} • ${mon[d.month - 1]} ${d.day}';
+      }
+    } catch (_) {}
+
+    String timeLine = '';
+    try {
+      final dynamic st = (e as dynamic).startTime;
+      final dynamic et = (e as dynamic).endTime;
+      if (st != null && et != null) timeLine = '$st – $et';
+    } catch (_) {}
+
+    return _SavedSummary(dateLine: dateLine, timeLine: timeLine, whoLine: who);
   }
 
-  final who = names.isEmpty
-      ? 'For: —'
-      : 'For: ${names.take(2).join(', ')}${names.length > 2 ? ' +' : ''}';
+  String? _profileImagePath(Profile p) {
+    final d = p as dynamic;
 
-  // date/day
-  String dateLine = sessionsCount == 1 ? '1 session saved' : '$sessionsCount sessions saved';
-  try {
-    if (e.date != null) {
-      final d = e.date!;
-      const dow = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-      const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      dateLine = '${dow[d.weekday - 1]} • ${mon[d.month - 1]} ${d.day}';
-    }
-  } catch (_) {}
+    try {
+      final v = d.imagePath;
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    } catch (_) {}
 
-  // time (best-effort)
-  String timeLine = '';
-  try {
-    final dynamic st = (e as dynamic).startTime;
-    final dynamic et = (e as dynamic).endTime;
-    if (st != null && et != null) timeLine = '$st – $et';
-  } catch (_) {}
+    try {
+      final v = d.avatarPath;
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    } catch (_) {}
 
-  return _SavedSummary(dateLine: dateLine, timeLine: timeLine, whoLine: who);
-}
+    try {
+      final v = d.photoPath;
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    } catch (_) {}
 
-String? _profileImagePath(Profile p) {
-  final d = p as dynamic;
-
-  // Try common field names without breaking compile if they don’t exist
-  try {
-    final v = d.imagePath;
-    if (v is String && v.trim().isNotEmpty) return v.trim();
-  } catch (_) {}
-
-  try {
-    final v = d.avatarPath;
-    if (v is String && v.trim().isNotEmpty) return v.trim();
-  } catch (_) {}
-
-  try {
-    final v = d.photoPath;
-    if (v is String && v.trim().isNotEmpty) return v.trim();
-  } catch (_) {}
-
-  return null;
-}
-
-
+    return null;
+  }
 } // ✅ closes class _KeepBusyHomePageState
 
 /// =====================================================
@@ -1012,7 +1214,8 @@ class _MiniInfoCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text(title,
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 2),
                   Text(subtitle, style: const TextStyle(color: Colors.black54)),
                 ],
@@ -1026,15 +1229,7 @@ class _MiniInfoCard extends StatelessWidget {
   }
 }
 
-// ==============================
-// HOME PAGE HELPERS (Carousel + Cards + Profile image provider)
-// Paste this ONCE in home_page.dart (outside other widgets/classes)
-// ==============================
-
-/// Responsive carousel:
-/// - Default: always horizontal scroll (no stacking)
-/// - Shows LEFT/RIGHT arrows as soon as content overflows
-/// - If twoUpOnNarrow=true: exactly 2 items show on phones and are centered
+/// Responsive carousel
 class _ResponsiveHCarousel extends StatefulWidget {
   const _ResponsiveHCarousel({
     required this.itemCount,
@@ -1047,7 +1242,7 @@ class _ResponsiveHCarousel extends StatefulWidget {
     this.arrowGutter = 44,
     this.showScrollArrow = true,
     this.fadeColor,
-    this.wrapOnWide = false, // keep false so carousels never "stack"
+    this.wrapOnWide = false,
     this.wideWrapBreakpoint = 1100,
   });
 
@@ -1107,7 +1302,6 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
         final gap = widget.gap;
         final gutter = widget.arrowGutter;
 
-        // Compute item width
         final double effectiveWidth;
         if (widget.twoUpOnNarrow && c.maxWidth < 700) {
           effectiveWidth = ((c.maxWidth - gap) / 2).clamp(140.0, 240.0);
@@ -1115,7 +1309,6 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
           effectiveWidth = widget.itemWidth;
         }
 
-        // Optional wrap mode (off by default)
         final allowWrap =
             widget.wrapOnWide && c.maxWidth >= widget.wideWrapBreakpoint;
 
@@ -1135,14 +1328,10 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
           );
         }
 
-        // Determine overflow (arrows appear as soon as content is clipped)
         final totalContent = (widget.itemCount * effectiveWidth) +
             ((widget.itemCount - 1).clamp(0, 999) * gap);
         final needsScroll = totalContent > c.maxWidth + 1;
 
-        // Base side padding:
-        // - Profiles/saved: if 2-up on narrow, center the two items
-        // - Otherwise start at left like calendar
         double baseSidePad = 0;
 
         if (widget.twoUpOnNarrow &&
@@ -1154,7 +1343,6 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
           baseSidePad = 0;
         }
 
-        // If arrows are shown, add gutter so buttons don't cover content
         final sidePad = (needsScroll && widget.showScrollArrow)
             ? (baseSidePad + gutter)
             : baseSidePad;
@@ -1181,9 +1369,7 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
                   ),
                 ),
               ),
-
               if (needsScroll && widget.showScrollArrow) ...[
-                // LEFT fade panel
                 Positioned(
                   left: 0,
                   top: 0,
@@ -1204,8 +1390,6 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
                     ),
                   ),
                 ),
-
-                // RIGHT fade panel
                 Positioned(
                   right: 0,
                   top: 0,
@@ -1226,8 +1410,6 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
                     ),
                   ),
                 ),
-
-                // LEFT arrow
                 Positioned(
                   left: 6,
                   top: 0,
@@ -1241,16 +1423,13 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
                         elevation: 1,
                         child: IconButton(
                           icon: const Icon(Icons.chevron_left),
-                          onPressed: _canLeft
-                              ? () => _scrollBy(-(effectiveWidth + gap))
-                              : null,
+                          onPressed:
+                              _canLeft ? () => _scrollBy(-(effectiveWidth + gap)) : null,
                         ),
                       ),
                     ),
                   ),
                 ),
-
-                // RIGHT arrow
                 Positioned(
                   right: 6,
                   top: 0,
@@ -1264,9 +1443,7 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
                         elevation: 1,
                         child: IconButton(
                           icon: const Icon(Icons.chevron_right),
-                          onPressed: _canRight
-                              ? () => _scrollBy(effectiveWidth + gap)
-                              : null,
+                          onPressed: _canRight ? () => _scrollBy(effectiveWidth + gap) : null,
                         ),
                       ),
                     ),
@@ -1281,7 +1458,7 @@ class _ResponsiveHCarouselState extends State<_ResponsiveHCarousel> {
   }
 }
 
-/// Calendar week strip: uses WeekColumnsPreview but hides the header/title
+/// Calendar week strip
 class _ResponsiveWeekStrip extends StatelessWidget {
   const _ResponsiveWeekStrip({
     required this.focusDate,
@@ -1352,7 +1529,8 @@ class _MiniProfileCard extends StatelessWidget {
               label.toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              style:
+                  t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
@@ -1449,7 +1627,8 @@ class _MiniSavedQuickCard extends StatelessWidget {
               child: TextButton(
                 onPressed: onView,
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 ),
                 child: const Text('View event'),
               ),
@@ -1461,18 +1640,14 @@ class _MiniSavedQuickCard extends StatelessWidget {
   }
 }
 
-
 /* =========================
  * QUICK SEARCH BAR (frosted)
- * Home header preview: includes Search-page style controls row
  * ========================= */
 class QuickSearchBar extends StatefulWidget {
   const QuickSearchBar({
     super.key,
     required this.profiles,
     this.compact = false,
-
-    /// Set true on Home page header to show Sort / Advanced / Favorites / Selected
     this.showToolbar = true,
   });
 
@@ -1524,13 +1699,15 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
         ? OutlinedButton.styleFrom(
             backgroundColor: Colors.white,
             side: BorderSide(color: Colors.black.withValues(alpha: 0.14)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           )
         : FilledButton.styleFrom(
             backgroundColor: cs.primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           );
 
@@ -1546,7 +1723,6 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Keep your sizing logic
     final fieldH = widget.compact ? 56.0 : 48.0;
     final gap = widget.compact ? 8.0 : 10.0;
     final double? btnWidth = widget.compact ? null : 140.0;
@@ -1559,7 +1735,8 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.75), width: 1),
+            border:
+                Border.all(color: Colors.white.withValues(alpha: 0.75), width: 1),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.10),
@@ -1571,7 +1748,7 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
           padding: const EdgeInsets.all(10),
           child: LayoutBuilder(
             builder: (context, c) {
-              final isNarrow = c.maxWidth < 680; // wider breakpoint so toolbar stays nice
+              final isNarrow = c.maxWidth < 680;
 
               Widget field({
                 required TextEditingController ctrl,
@@ -1589,13 +1766,15 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                       hintText: hint,
                       filled: true,
                       fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.15)),
+                        borderSide:
+                            BorderSide(color: Colors.black.withValues(alpha: 0.15)),
                       ),
                     ),
                   ),
@@ -1616,21 +1795,20 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                 ),
               );
 
-              // Toolbar row (Search-page style controls)
               Widget toolbarRow() {
                 final row = Row(
                   children: [
-                    // Sort
-                    Text('Sort by', style: Theme.of(context).textTheme.bodyMedium),
+                    Text('Sort by',
+                        style: Theme.of(context).textTheme.bodyMedium),
                     const SizedBox(width: 8),
-
                     SizedBox(
                       height: 44,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black.withValues(alpha: 0.14)),
+                          border:
+                              Border.all(color: Colors.black.withValues(alpha: 0.14)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1638,9 +1816,13 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                             child: DropdownButton<String>(
                               value: _sort,
                               items: const [
-                                DropdownMenuItem(value: 'Soonest', child: Text('Soonest')),
-                                DropdownMenuItem(value: 'Closest', child: Text('Closest')),
-                                DropdownMenuItem(value: 'Lowest price', child: Text('Lowest price')),
+                                DropdownMenuItem(
+                                    value: 'Soonest', child: Text('Soonest')),
+                                DropdownMenuItem(
+                                    value: 'Closest', child: Text('Closest')),
+                                DropdownMenuItem(
+                                    value: 'Lowest price',
+                                    child: Text('Lowest price')),
                               ],
                               onChanged: (v) {
                                 if (v == null) return;
@@ -1651,10 +1833,7 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                         ),
                       ),
                     ),
-
                     const SizedBox(width: 14),
-
-                    // Advanced Filters
                     _pillButton(
                       outlined: true,
                       onPressed: _openAdvancedFiltersPreview,
@@ -1666,31 +1845,32 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                         ],
                       ),
                     ),
-
                     const SizedBox(width: 12),
-
-                    // Favorites
                     _pillButton(
                       outlined: true,
-                      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly),
+                      onPressed: () =>
+                          setState(() => _favoritesOnly = !_favoritesOnly),
                       child: Row(
                         children: [
-                          Icon(_favoritesOnly ? Icons.favorite : Icons.favorite_border, size: 18),
+                          Icon(_favoritesOnly
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                              size: 18),
                           const SizedBox(width: 8),
                           const Text('Favorites'),
                         ],
                       ),
                     ),
-
                     const SizedBox(width: 10),
-
-                    // Selected sessions
                     _pillButton(
                       outlined: true,
                       onPressed: () => setState(() => _selectedOnly = !_selectedOnly),
                       child: Row(
                         children: [
-                          Icon(_selectedOnly ? Icons.check_box : Icons.check_box_outline_blank, size: 18),
+                          Icon(_selectedOnly
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                              size: 18),
                           const SizedBox(width: 8),
                           const Text('Selected sessions'),
                         ],
@@ -1699,7 +1879,6 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                   ],
                 );
 
-                // On narrow screens, make the toolbar horizontally scrollable (so it still matches the Search page feel)
                 if (isNarrow) {
                   return SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -1709,18 +1888,22 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                 return row;
               }
 
-              // ===== Layout =====
               if (isNarrow) {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    field(ctrl: _whatCtrl, hint: 'Search classes & events', icon: Icons.search),
+                    field(
+                        ctrl: _whatCtrl,
+                        hint: 'Search classes & events',
+                        icon: Icons.search),
                     SizedBox(height: gap),
-                    field(ctrl: _whereCtrl, hint: 'City or ZIP', icon: Icons.place_outlined),
+                    field(
+                        ctrl: _whereCtrl,
+                        hint: 'City or ZIP',
+                        icon: Icons.place_outlined),
                     SizedBox(height: gap),
                     Align(alignment: Alignment.center, child: btn),
-
                     if (widget.showToolbar) ...[
                       const SizedBox(height: 10),
                       toolbarRow(),
@@ -1729,7 +1912,6 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                 );
               }
 
-              // Wide row (like your screenshot 1 look)
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1737,18 +1919,23 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                     children: [
                       Expanded(
                         flex: 6,
-                        child: field(ctrl: _whatCtrl, hint: 'Search classes & events', icon: Icons.search),
+                        child: field(
+                            ctrl: _whatCtrl,
+                            hint: 'Search classes & events',
+                            icon: Icons.search),
                       ),
                       SizedBox(width: gap),
                       Expanded(
                         flex: 4,
-                        child: field(ctrl: _whereCtrl, hint: 'City or ZIP', icon: Icons.place_outlined),
+                        child: field(
+                            ctrl: _whereCtrl,
+                            hint: 'City or ZIP',
+                            icon: Icons.place_outlined),
                       ),
                       SizedBox(width: gap),
                       btn,
                     ],
                   ),
-
                   if (widget.showToolbar) ...[
                     const SizedBox(height: 10),
                     Align(
@@ -1766,12 +1953,9 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
   }
 }
 
-
 // ==============================
 // Week Columns Preview (local)
-// Put this at the VERY bottom of home_page.dart (outside all classes)
 // ==============================
-
 
 @immutable
 class DayPip {
@@ -1783,8 +1967,8 @@ class DayPip {
   });
 
   final Color color;
-  final String? title;     // event title (optional)
-  final String? subtitle;  // time or extra info (optional)
+  final String? title;
+  final String? subtitle;
   final String? tooltip;
 }
 
@@ -1797,16 +1981,12 @@ class WeekColumnsPreview extends StatefulWidget {
     this.onTapHeader,
     this.headerTitle = 'MY EVENTS',
     this.showHeader = true,
-
-    // ✅ configurable
     this.showScrollArrow = true,
     this.dayCardHeight = 190,
-    this.maxLinesPerDay = 2, // ✅ show 2 items then "X more"
+    this.maxLinesPerDay = 2,
   });
 
   final DateTime focusDate;
-
-  /// Key MUST be date-only (year, month, day). Values are “pips” (events) to show.
   final Map<DateTime, List<DayPip>> itemsByDay;
 
   final void Function(DateTime day)? onTapDay;
@@ -1827,7 +2007,20 @@ class WeekColumnsPreview extends StatefulWidget {
   }
 
   static const dow = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-  static const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  static const mon = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
   static String dateLabel(DateTime d) => '${mon[d.month - 1]} ${d.day}';
 
   @override
@@ -1882,17 +2075,17 @@ class _WeekColumnsPreviewState extends State<WeekColumnsPreview> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final start = WeekColumnsPreview.startOfWeekMonday(widget.focusDate);
-    final days = List.generate(7, (i) => WeekColumnsPreview.d0(start.add(Duration(days: i))));
+    final days =
+        List.generate(7, (i) => WeekColumnsPreview.d0(start.add(Duration(days: i))));
 
     return LayoutBuilder(
       builder: (context, c) {
         final isWide = c.maxWidth >= 900;
         final colW = isWide ? 170.0 : 160.0;
 
-
-final gap = 10.0; // whatever your day-card right margin/spacing is
-final total = (7 * colW) + (6 * gap); // 7 cards + 6 gaps
-final needsScroll = total > c.maxWidth + 1;
+        final gap = 10.0;
+        final total = (7 * colW) + (6 * gap);
+        final needsScroll = total > c.maxWidth + 1;
 
         Widget strip() {
           return Container(
@@ -1906,125 +2099,72 @@ final needsScroll = total > c.maxWidth + 1;
             ),
             child: Stack(
               children: [
-                // ✅ add padding so arrows don't cover content
-                // ✅ NO reserved padding (removes solid gutters). We overlay fades + arrows instead.
-SingleChildScrollView(
-  controller: _ctl,
-  scrollDirection: Axis.horizontal,
-  child: Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      for (final day in days)
-        _DayColumnCard(
-          width: colW,
-          height: widget.dayCardHeight,
-          dowLabel: WeekColumnsPreview.dow[day.weekday - 1],
-          dateLabel: WeekColumnsPreview.dateLabel(day),
-          items: widget.itemsByDay[WeekColumnsPreview.d0(day)] ?? const <DayPip>[],
-          maxLines: widget.maxLinesPerDay,
-          onTap: widget.onTapDay == null ? null : () => widget.onTapDay!(day),
-        ),
-    ],
-  ),
-),
-
-// ✅ translucent LEFT fade (so you can still see the card underneath)
-if (needsScroll && widget.showScrollArrow)
-  Positioned(
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 44,
-    child: IgnorePointer(
-      ignoring: true,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [
-              const Color(0xFFF6F0ED).withValues(alpha: 0.75),
-              const Color(0xFFF6F0ED).withValues(alpha: 0.00),
-            ],
-          ),
-        ),
-      ),
-    ),
-  ),
-
-// ✅ translucent RIGHT fade
-if (needsScroll && widget.showScrollArrow)
-  Positioned(
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 44,
-    child: IgnorePointer(
-      ignoring: true,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.centerRight,
-            end: Alignment.centerLeft,
-            colors: [
-              const Color(0xFFF6F0ED).withValues(alpha: 0.75),
-              const Color(0xFFF6F0ED).withValues(alpha: 0.00),
-            ],
-          ),
-        ),
-      ),
-    ),
-  ),
-
-
-                // ✅ LEFT edge fade (transparent)
-if (needsScroll && widget.showScrollArrow)
-  Positioned(
-    left: 0,
-    top: 0,
-    bottom: 0,
-    child: IgnorePointer(
-      child: Container(
-        width: 44,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [
-              const Color(0xFFF6F0ED).withValues(alpha: 0.18),
-              const Color(0xFFF6F0ED).withValues(alpha: 0.0),
-            ],
-          ),
-        ),
-      ),
-    ),
-  ),
-
-// ✅ RIGHT edge fade (transparent)
-if (needsScroll && widget.showScrollArrow)
-  Positioned(
-    right: 0,
-    top: 0,
-    bottom: 0,
-    child: IgnorePointer(
-      child: Container(
-        width: 44,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.centerRight,
-            end: Alignment.centerLeft,
-            colors: [
-              const Color(0xFFF6F0ED).withValues(alpha: 0.18),
-              const Color(0xFFF6F0ED).withValues(alpha: 0.0),
-            ],
-          ),
-        ),
-      ),
-    ),
-  ),
-
-
-                // ✅ LEFT arrow
+                SingleChildScrollView(
+                  controller: _ctl,
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final day in days)
+                        _DayColumnCard(
+                          width: colW,
+                          height: widget.dayCardHeight,
+                          dowLabel: WeekColumnsPreview.dow[day.weekday - 1],
+                          dateLabel: WeekColumnsPreview.dateLabel(day),
+                          items: widget.itemsByDay[WeekColumnsPreview.d0(day)] ??
+                              const <DayPip>[],
+                          maxLines: widget.maxLinesPerDay,
+                          onTap: widget.onTapDay == null
+                              ? null
+                              : () => widget.onTapDay!(day),
+                        ),
+                    ],
+                  ),
+                ),
+                if (needsScroll && widget.showScrollArrow)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 44,
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              const Color(0xFFF6F0ED).withValues(alpha: 0.75),
+                              const Color(0xFFF6F0ED).withValues(alpha: 0.00),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (needsScroll && widget.showScrollArrow)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 44,
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerRight,
+                            end: Alignment.centerLeft,
+                            colors: [
+                              const Color(0xFFF6F0ED).withValues(alpha: 0.75),
+                              const Color(0xFFF6F0ED).withValues(alpha: 0.00),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (needsScroll && widget.showScrollArrow)
                   Positioned(
                     left: 0,
@@ -2042,8 +2182,6 @@ if (needsScroll && widget.showScrollArrow)
                       ),
                     ),
                   ),
-
-                // ✅ RIGHT arrow
                 if (needsScroll && widget.showScrollArrow)
                   Positioned(
                     right: 0,
@@ -2159,7 +2297,8 @@ class _DayColumnCard extends StatelessWidget {
                     pip.title ?? 'Saved',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   if ((pip.subtitle ?? '').isNotEmpty)
                     Text(
@@ -2191,7 +2330,6 @@ class _DayColumnCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // DAY pill
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
@@ -2208,25 +2346,19 @@ class _DayColumnCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-
           Text(
             dateLabel,
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
           ),
-
           const SizedBox(height: 10),
-
           if (items.isEmpty)
-  Text(
-    'No saved',
-    style: theme.textTheme.bodyMedium?.copyWith(
-      color: const Color(0xFF7D7A78),
-      fontWeight: FontWeight.w600,
-    ),
-  ),
-
-
-          // ✅ prevents overflow and keeps "X more" visible
+            Text(
+              'No saved',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF7D7A78),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           Expanded(
             child: items.isEmpty
                 ? const SizedBox()
@@ -2260,5 +2392,3 @@ class _DayColumnCard extends StatelessWidget {
     );
   }
 }
-
-
