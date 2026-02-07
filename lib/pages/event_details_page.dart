@@ -44,6 +44,7 @@ class EventDetailsPage extends StatefulWidget {
     required this.profile,
     required this.profiles,
     this.sessionSelections = const {},
+    required this.slotSelections,
     this.onUpdateSessionSelections,
   });
 
@@ -54,6 +55,8 @@ class EventDetailsPage extends StatefulWidget {
   /// slotId -> set of profile indexes
 final Map<Id, Set<int>> sessionSelections;
 final void Function(Map<Id, Set<int>>)? onUpdateSessionSelections;
+
+  final dynamic slotSelections;
 
 
   @override
@@ -103,30 +106,17 @@ void initState() {
   super.initState();
   _event = widget.event;
 
-  // Local copy used to drive immediate UI checkmarks
-  _sessionSelectedProfileIndexes = {
-    for (final entry in widget.sessionSelections.entries)
+  // ✅ Slot-level source of truth (hydrate immediately)
+  _slotSelectedProfileIndexes = {
+    for (final entry in widget.slotSelections.entries)
       entry.key: Set<int>.from(entry.value),
   };
 
-  // Slot selections are the source of truth; this will be filled by your existing logic
-  _slotSelectedProfileIndexes = {};
+  // ✅ Session-level cache for immediate UI (checkboxes, labels, popup initial state)
+  // Build from slots so it reflects ALL profiles already selected across slots.
+  _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
 }
 
-@override
-void didUpdateWidget(covariant EventDetailsPage oldWidget) {
-  super.didUpdateWidget(oldWidget);
-
-  // If parent provides updated session selections, refresh local UI map
-  if (!identical(oldWidget.sessionSelections, widget.sessionSelections)) {
-    setState(() {
-      _sessionSelectedProfileIndexes = {
-        for (final entry in widget.sessionSelections.entries)
-          entry.key: Set<int>.from(entry.value),
-      };
-    });
-  }
-}
 
 
   /// Pretty label for a profile index (nickname > full name > fallback).
@@ -382,12 +372,17 @@ void didUpdateWidget(covariant EventDetailsPage oldWidget) {
       final first = list.first.date;
       final last = list.last.date;
 
-      final selected = <int>{};
+// ✅ Session selection = UNION of slot selections (source of truth)
+final selected = <int>{};
 for (final s in list) {
   final sid = s.id;
   if (sid == 0) continue;
   selected.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
 }
+
+final forLabel = selected.isEmpty
+    ? ''
+    : 'For: ' + selected.map(_profileLabel).join(', ');
 
       final days = daysLabel(list);
       final time = timeLabel(list);
@@ -396,8 +391,6 @@ for (final s in list) {
       final cost = costLabel(list);
       final level = levelLabel(list);
 
-      final forLabel =
-          'For: ' + selected.map(_profileLabel).join(', ');
 
       // Build a compact meta line: "Ages: 5–16 • Advanced • 4 weeks • $50"
       final metaParts = <String>[];
@@ -561,19 +554,23 @@ for (final s in list) {
 
   if (result == null) return;
 
-  // ✅ Write the same selected set to EACH slot in this session
-  // ✅ AND refresh the session-level UI cache so the checkbox flips immediately
-  setState(() {
-    for (final sid in slotIds) {
-      _slotSelectedProfileIndexes[sid] = Set<int>.from(result);
-    }
+// ✅ Write the same selected set to EACH slot in this session
+// ✅ Then rebuild the FULL session map from slot selections (source of truth)
+setState(() {
+  for (final sid in slotIds) {
+    _slotSelectedProfileIndexes[sid] = Set<int>.from(result);
+  }
 
-    // Keep the legacy session map in sync for immediate UI updates
-    _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
-  });
+  // ✅ Recompute session selections from ALL slots (keeps sessions 1..10 intact)
+  _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
+});
 
-  // ✅ Notify parent using SESSION -> profiles (union across slots)
-  widget.onUpdateSessionSelections?.call(_buildSessionSelectionsFromSlots());
+// ✅ Notify parent with the FULL session map (prevents overwriting other sessions)
+widget.onUpdateSessionSelections?.call(
+  Map<int, Set<int>>.from(_sessionSelectedProfileIndexes),
+);
+
+
 }
 
 
@@ -750,10 +747,9 @@ for (final s in list) {
                           });
 
                         // make sure we have a selection set for each sessionIndex
-                        for (final k in keys) {
-                          _sessionSelectedProfileIndexes
-                              .putIfAbsent(k, () => <int>{});
-                        }
+                        // Keep session UI map in sync with slot source-of-truth.
+// (Don't seed empty sets here — it can mask updates.)
+_sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
 
                         // ---------- helpers for labels ----------
                         String daysLabel(List<EventSlot> list) {

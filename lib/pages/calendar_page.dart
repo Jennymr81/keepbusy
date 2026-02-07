@@ -29,6 +29,7 @@ class CalendarPage extends StatefulWidget {
     required this.onOpenProfile,
     required this.onAddEvent,
     required this.sessionSelections,
+    required this.slotSelections, 
   });
 
   final List<Profile> profiles;
@@ -37,12 +38,16 @@ class CalendarPage extends StatefulWidget {
   final void Function(Profile profile) onOpenProfile;
   final VoidCallback onAddEvent;
 
-  // eventId -> (sessionIndex -> set of profile indexes)
   final Map<Id, Map<int, Set<int>>> sessionSelections;
+  final Map<int, Set<int>> slotSelections; // slotId -> profileIndexes
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
 }
+
+
+
+
 
 enum _ViewMode { month, week, day }
 
@@ -77,7 +82,15 @@ class _CalendarPageState extends State<CalendarPage> {
   // day -> list of items for that day
   final Map<DateTime, List<_CalItem>> _itemsByDay = {};
 
+
+
   bool _loadingIndex = false;
+// Hover mini-preview state
+OverlayEntry? _hoverPreview;
+bool _isHoveringBubble = false;
+bool _isHoveringPreview = false;
+Timer? _hoverHideTimer;
+
 
   int _daysInMonth(DateTime d) {
     final next =
@@ -133,188 +146,289 @@ class _CalendarPageState extends State<CalendarPage> {
   // Build index from selections
   // ---------------------------
   Future<void> _rebuildIndex() async {
-    if (_loadingIndex) return;
-    _loadingIndex = true;
+  if (_loadingIndex) return;
+  _loadingIndex = true;
 
-    try {
-      final isar = await getIsar();
-      final Map<DateTime, List<_CalItem>> next = {};
+  try {
+    final isar = await getIsar();
+    final Map<DateTime, List<_CalItem>> next = {};
 
-      for (final stub in widget.events) {
-        final eventId = stub.id;
+   for (final stub in widget.events) {
+  final Id? eventId = stub.id;
+  if (eventId == null) continue;
 
-        // Only include events that have selections
-        final selBySession = widget.sessionSelections[eventId];
-        if (selBySession == null || selBySession.isEmpty) continue;
+  final Map<int, Set<int>>? selBySession = widget.sessionSelections[eventId];
+  if (selBySession == null || selBySession.isEmpty) continue;
 
-        // Load full event with slots
-        final ev = await isar.events.get(eventId);
-        if (ev == null) continue;
+  final ev = await isar.events.get(eventId);
+  if (ev == null) continue;
 
-        await ev.slotIds.load();
+  await ev.slotIds.load();
 
-        for (final slot in ev.slotIds) {
-          final idx = slot.sessionIndex ?? 0;
+  for (final slot in ev.slotIds) {
+    final idx = slot.sessionIndex ?? 0;
 
-          // only include selected sessions
-          final selectedProfiles = selBySession[idx];
-          if (selectedProfiles == null || selectedProfiles.isEmpty) continue;
+    final Set<int> selectedProfiles =
+        (selBySession[idx] ?? const <int>{}).toSet(); // ✅ never null, strongly typed
+    if (selectedProfiles.isEmpty) continue;
 
-          // keep only profile indexes that still exist
-          final safeProfiles = selectedProfiles
-              .where((pi) => pi >= 0 && pi < widget.profiles.length)
-              .toSet();
-          if (safeProfiles.isEmpty) continue;
+    final Set<int> safeProfiles = selectedProfiles
+        .where((pi) => pi >= 0 && pi < widget.profiles.length)
+        .toSet();
+    if (safeProfiles.isEmpty) continue;
 
-          final day = _dayKey(slot.date);
-          (next[day] ??= <_CalItem>[]).add(
-            _CalItem(
-              event: ev,
-              slot: slot,
-              sessionIndex: idx,
-              profileIndexes: safeProfiles,
-            ),
-          );
-        }
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _itemsByDay
-          ..clear()
-          ..addAll(next);
-
-        _selectedDay ??= _dayKey(DateTime.now());
-      });
-    } finally {
-      _loadingIndex = false;
-    }
-  }
-
-  // clicking a day opens a “Quick View” card
-  Future<void> _openDayQuickView(DateTime day) async {
-    final items = _viewAll
-        ? _itemsForDay(day)
-        : _itemsForDay(day).where((it) => it.profileIndexes.contains(_profileIndex)).toList();
-
-    if (items.isEmpty) return;
-
-    // group by event+sessionIndex so multiple slots in same session/day don’t spam
-    final map = <String, _CalItem>{};
-    for (final it in items) {
-      map['${it.event.id}-${it.sessionIndex}-${_dayKey(it.slot.date).millisecondsSinceEpoch}'] = it;
-    }
-    final list = map.values.toList()
-      ..sort((a, b) {
-        final am = a.slot.startMinutes;
-        final bm = b.slot.startMinutes;
-        if (am == null || bm == null) return 0;
-        return am.compareTo(bm);
-      });
-
-    if (!mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    final day = _dayKey(slot.date);
+    (next[day] ??= <_CalItem>[]).add(
+      _CalItem(
+        event: ev,
+        slot: slot,
+        sessionIndex: idx,
+        profileIndexes: safeProfiles,
       ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  DateFormat('EEEE, MMM d, yyyy').format(day),
-                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 12),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final it = list[i];
-
-                      final safeNames = it.profileIndexes
-                          .where((pi) => pi >= 0 && pi < widget.profiles.length)
-                          .map((pi) => profileLabel(widget.profiles[pi]))
-                          .toList()
-                        ..sort();
-
-                      final chosenProfileIndex = (!_viewAll)
-                          ? _profileIndex
-                          : (it.profileIndexes.isNotEmpty ? it.profileIndexes.first : 0);
-
-                      final prof = (chosenProfileIndex >= 0 &&
-                              chosenProfileIndex < widget.profiles.length)
-                          ? widget.profiles[chosenProfileIndex]
-                          : widget.profiles.first;
-
-                      final start = _minutesToTimeOfDay(it.slot.startMinutes)?.format(ctx) ?? '';
-                      final end = _minutesToTimeOfDay(it.slot.endMinutes)?.format(ctx) ?? '';
-                      final safeTime = [start, end].where((x) => x.isNotEmpty).join(' – ');
-
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF6D9),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.black.withValues(alpha: .08)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(it.event.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 6),
-                            Text(
-                              [
-                                if (safeTime.isNotEmpty) safeTime,
-                                'Session ${it.sessionIndex + 1}',
-                                if (safeNames.isNotEmpty) 'For: ${safeNames.join(", ")}',
-                              ].join(' • '),
-                              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: Colors.black54),
-                            ),
-                            const SizedBox(height: 10),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () {
-                                  Navigator.of(ctx).pop();
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => EventDetailsPage(
-                                        event: it.event,
-                                        profile: prof,
-                                        profiles: widget.profiles,
-                                        sessionSelections: widget.sessionSelections[it.event.id] ?? const {},
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: const Text('View event'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
+}
+
+
+    if (!mounted) return;
+    setState(() {
+      _itemsByDay
+        ..clear()
+        ..addAll(next);
+
+      _selectedDay ??= _dayKey(DateTime.now());
+    });
+  } finally {
+    _loadingIndex = false;
+  }
+}
+
+
+
+
+
+
+// Mini preview for a single calendar item (hover)
+void _showMiniPreview(BuildContext context, _CalItem it, LayerLink link) {
+  _hideMiniPreview(immediate: true);
+
+  final start = _minutesToTimeOfDay(it.slot.startMinutes);
+  final end = _minutesToTimeOfDay(it.slot.endMinutes);
+
+  final timeLine = (start != null)
+      ? '${start.format(context)}${end != null ? ' – ${end.format(context)}' : ''}'
+      : 'Time TBD';
+
+  final screen = MediaQuery.of(context).size;
+  final maxWidth = screen.width < 420 ? screen.width - 32 : 320.0;
+
+  _hoverPreview = OverlayEntry(
+    builder: (_) => Positioned.fill(
+      child: Stack(
+        children: [
+          CompositedTransformFollower(
+            link: link,
+            showWhenUnlinked: false,
+            offset: const Offset(0, 44),
+            child: MouseRegion(
+              onEnter: (_) {
+                _isHoveringPreview = true;
+                _hoverHideTimer?.cancel();
+              },
+              onExit: (_) {
+                _isHoveringPreview = false;
+                _hideMiniPreview(); // delayed hide
+              },
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
+                elevation: 0,
+                child: Container(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .08),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        it.event.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        timeLine,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            _hideMiniPreview(immediate: true);
+                            _openDayQuickView(_dayKey(it.slot.date));
+                          },
+                          child: const Text('View event'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Overlay.of(context).insert(_hoverPreview!);
+}
+
+
+void _hideMiniPreview({bool immediate = false}) {
+  _hoverHideTimer?.cancel();
+
+  // If hovering either bubble or preview, do nothing.
+  if (!immediate && (_isHoveringBubble || _isHoveringPreview)) return;
+
+  if (immediate) {
+    _hoverPreview?.remove();
+    _hoverPreview = null;
+    return;
+  }
+
+  // Small delay prevents flicker while moving mouse bubble -> preview
+  _hoverHideTimer = Timer(const Duration(milliseconds: 120), () {
+    if (_isHoveringBubble || _isHoveringPreview) return;
+    _hoverPreview?.remove();
+    _hoverPreview = null;
+  });
+}
+
+
+
+
+ // clicking a day opens a “Quick View” card
+Future<void> _openDayQuickView(DateTime day) async {
+  final items = _viewAll
+      ? _itemsForDay(day)
+      : _itemsForDay(day)
+          .where((it) => it.profileIndexes.contains(_profileIndex))
+          .toList();
+
+  if (items.isEmpty) return;
+
+  // group by event+sessionIndex so multiple slots in same session/day don’t spam
+  final map = <String, _CalItem>{};
+  for (final it in items) {
+    map[
+        '${it.event.id}-${it.sessionIndex}-${_dayKey(it.slot.date).millisecondsSinceEpoch}'] = it;
+  }
+
+  final uniqueItems = map.values.toList();
+
+  if (!mounted) return;
+
+  await showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => SafeArea(
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        itemCount: uniqueItems.length,
+        separatorBuilder: (_, __) => const Divider(height: 16),
+        itemBuilder: (_, i) {
+          final it = uniqueItems[i];
+
+          final start = _minutesToTimeOfDay(it.slot.startMinutes);
+          final end = _minutesToTimeOfDay(it.slot.endMinutes);
+
+          final timeLine = (start != null)
+              ? '${start.format(context)}${end != null ? ' – ${end.format(context)}' : ''}'
+              : 'Time TBD';
+
+          final safeIndex = (it.profileIndexes.isNotEmpty &&
+                  it.profileIndexes.first >= 0 &&
+                  it.profileIndexes.first < widget.profiles.length)
+              ? it.profileIndexes.first
+              : 0;
+
+          final c = widget.profiles[safeIndex].color;
+
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              width: 10,
+              height: 40,
+              decoration: BoxDecoration(
+                color: c,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            title: Text(
+              it.event.title,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              timeLine,
+              style: const TextStyle(color: Colors.black54),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              Navigator.pop(context);
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => EventDetailsPage(
+  event: it.event,
+  profile: widget.profiles[safeIndex],
+  profiles: widget.profiles,
+
+  // always type the empty map
+  sessionSelections: widget.sessionSelections[it.event.id] ?? const <int, Set<int>>{},
+
+  // slot selections are keyed by slotId (NOT eventId)
+  slotSelections: widget.slotSelections,
+),
+
+                ),
+              );
+            },
+          );
+        },
+      ),
+    ),
+  );
+}
+
 
   @override
   void initState() {
@@ -458,55 +572,118 @@ class _CalendarPageState extends State<CalendarPage> {
                 padding: const EdgeInsets.only(top: 18),
                 child: Builder(
                   builder: (_) {
-                    if (_viewAll) {
-                      final set = <int>{};
-                      for (final it in visibleItems) {
-                        set.addAll(it.profileIndexes);
-                      }
-                      final indexes = set.toList()..sort();
+  // Show up to 2 mini cards per day cell to avoid overflow
+  final shown = visibleItems.take(1).toList();
+final extraCount = visibleItems.length - shown.length;
 
-                      return Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: indexes.map((pi) {
-                          final safeIndex = (pi >= 0 && pi < widget.profiles.length) ? pi : 0;
-                          final c = widget.profiles[safeIndex].color;
+ return Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    ...shown.map((it) {
+      final layerLink = LayerLink();
 
-                          return Container(
-                            width: dotW,
-                            height: dotH,
-                            decoration: BoxDecoration(
-                              color: c.withValues(alpha: .28),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: c.withValues(alpha: .6)),
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    }
 
-                    final safeIndex =
-                        (_profileIndex >= 0 && _profileIndex < widget.profiles.length) ? _profileIndex : 0;
-                    final c = widget.profiles[safeIndex].color;
+      final safeIndex =
+          (it.profileIndexes.isNotEmpty &&
+                  it.profileIndexes.first >= 0 &&
+                  it.profileIndexes.first < widget.profiles.length)
+              ? it.profileIndexes.first
+              : 0;
 
-                    return Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: List.generate(
-                        visibleItems.length.clamp(1, 3),
-                        (_) => Container(
-                          width: dotW * 1.6,
-                          height: dotH * 1.3,
-                          decoration: BoxDecoration(
-                            color: c.withValues(alpha: .28),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: c.withValues(alpha: .75), width: 1.2),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+      final c = widget.profiles[safeIndex].color;
+
+      final start = _minutesToTimeOfDay(it.slot.startMinutes);
+      final timeLabel = start == null ? '' : start.format(context);
+
+     return Padding(
+  padding: const EdgeInsets.only(bottom: 4),
+  child: CompositedTransformTarget(
+    link: layerLink,
+    child: MouseRegion(
+      onEnter: (_) => _showMiniPreview(context, it, layerLink),
+      onExit: (_) => _hideMiniPreview(),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+
+        // 📱 Mobile
+        onLongPress: () {
+          _openDayQuickView(_dayKey(it.slot.date));
+        },
+
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxHeight: 42,
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: c.withValues(alpha: .6),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  it.event.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
+                if (timeLabel.isNotEmpty)
+                  Text(
+                    timeLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.black54,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
+
+
+
+
+    }),
+
+    // ✅ ADDITION (this is the "+X more")
+    if (extraCount > 0)
+      Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(
+          '+$extraCount more',
+          style: const TextStyle(
+            fontSize: 10,
+            color: Colors.black54,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+  ],
+);
+
+
+
+},
+
+
+
+              ),
               ),
           ]),
         ),
@@ -714,6 +891,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       profile: profile,
                       profiles: widget.profiles,
                       sessionSelections: widget.sessionSelections[eventId] ?? const {},
+                      slotSelections: widget.slotSelections[eventId] ?? const {},
                     ),
                   ),
                 );
@@ -855,14 +1033,34 @@ class _CalendarPageState extends State<CalendarPage> {
                       );
                     }
 
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        leftCard(),
-                        const SizedBox(height: 16),
-                        sidebar(),
-                      ],
-                    );
+                    return LayoutBuilder(
+  builder: (context, c) {
+    final isWide = c.maxWidth >= 900; // desktop / tablet breakpoint
+
+    // WIDE: profiles on top, calendar gets full vertical space
+    if (isWide) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          sidebar(),               // profiles FIRST
+          const SizedBox(height: 16),
+          leftCard(),              // calendar gets full height
+        ],
+      );
+    }
+
+    // NARROW (mobile): keep existing behavior
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        leftCard(),
+        const SizedBox(height: 16),
+        sidebar(),
+      ],
+    );
+  },
+);
+
                   },
                 ),
               ),

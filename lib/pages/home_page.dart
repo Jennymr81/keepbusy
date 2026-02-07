@@ -194,22 +194,48 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
     _saveSlotSelectionsToPrefs();
   }
 
-  void _toggleSelectedEvent(Event e, bool isSelected) {
-    // Selected event is derived from slot selections.
-    // If unselected: remove all slot selections belonging to this event.
-    setState(() {
-      if (!isSelected) {
-        final slotIds = e.slotIds.toList().map((s) => s.id).toSet();
-        _slotSelections.removeWhere((slotId, _) => slotIds.contains(slotId));
-      }
+void _toggleSelectedEvent(Event e, bool isSelected) {
+  // "Selected events" are derived from slot selections.
+  // If user unselects the event, clear all slot selections for this event.
+  setState(() {
+    if (!isSelected) {
+      final slotIds = e.slotIds.map((s) => s.id).toSet();
+      _slotSelections.removeWhere((slotId, _) => slotIds.contains(slotId));
+    }
 
-      _selectedEventIds
-        ..clear()
-        ..addAll(_eventIdsFromSlotSelections());
-    });
+    _selectedEventIds
+      ..clear()
+      ..addAll(_eventIdsFromSlotSelections().cast<Id>());
+  });
 
-    _saveSlotSelectionsToPrefs();
+  _saveSlotSelectionsToPrefs();
+}
+
+
+
+Map<Id, Map<int, Set<int>>> _buildSessionSelectionsByEvent() {
+  final out = <Id, Map<int, Set<int>>>{};
+
+  for (final ev in _events) {
+    final bySession = <int, Set<int>>{};
+
+    // IMPORTANT: ev.slotIds must already be loaded in _initDbAndLoad()
+    for (final slot in ev.slotIds) {
+      final sid = slot.id;
+      if (sid == 0) continue;
+
+      final selectedProfiles = _slotSelections[sid];
+      if (selectedProfiles == null || selectedProfiles.isEmpty) continue;
+
+      final sessionKey = slot.sessionIndex ?? 0;
+      (bySession[sessionKey] ??= <int>{}).addAll(selectedProfiles);
+    }
+
+    if (bySession.isNotEmpty) out[ev.id] = bySession;
   }
+
+  return out;
+}
 
 
 
@@ -444,6 +470,8 @@ Future<void> _initDb() async {
     return ev;
   }
 
+  
+
   Future<void> _addEvent() async {
     final created = await Navigator.of(context).push<Map<String, dynamic>?>(
       MaterialPageRoute(
@@ -487,6 +515,8 @@ Future<void> _initDb() async {
     (Icons.search, 'Search'),
   ];
 
+
+
   // ============================
   // BUILD
   // ============================
@@ -497,6 +527,9 @@ Future<void> _initDb() async {
     final sessionSelections = _derivedSessionSelectionsByEvent();
 
     Widget page;
+
+    final sessionSelectionsByEvent = _buildSessionSelectionsByEvent();
+
 
     switch (idx) {
       case 0:
@@ -514,57 +547,59 @@ Future<void> _initDb() async {
 
       case 2:
         page = CalendarPage(
-          profiles: _profiles,
-          events: _events,
-          onOpenProfile: (p) async {
-            final result = await Navigator.push<Profile?>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => EditProfilePage(
-                  profile: p,
-                  onSave: _handleSave,
-                ),
-              ),
-            );
+  profiles: _profiles,
+  events: _events,
+  onOpenProfile: (p) async {
+    final result = await Navigator.push<Profile?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProfilePage(
+          profile: p,
+          onSave: _handleSave,
+        ),
+      ),
+    );
 
-            if (result == null) {
-              await _handleDelete(p);
-              return;
-            }
+    if (result == null) {
+      await _handleDelete(p);
+      return;
+    }
 
-            if (!mounted) return;
-            setState(() {
-              final i = _profiles.indexWhere((x) => x.id == result.id);
-              if (i >= 0) {
-                _profiles[i] = result;
-              } else {
-                _profiles.add(result);
-              }
-            });
+    if (!mounted) return;
+    setState(() {
+      final i = _profiles.indexWhere((x) => x.id == result.id);
+      if (i >= 0) {
+        _profiles[i] = result;
+      } else {
+        _profiles.add(result);
+      }
+    });
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Profile saved')),
-            );
-          },
-          onAddEvent: _addEvent,
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile saved')),
+    );
+  },
+  onAddEvent: _addEvent,
 
-          // ✅ still satisfies CalendarPage signature for now
-          sessionSelections: sessionSelections,
-        );
+
+    slotSelections: _slotSelections,
+    sessionSelections: sessionSelectionsByEvent,
+);
         break;
 
       case 3:
-        final savedEvents = _events.where((e) {
-          final m = sessionSelections[e.id];
-          return m != null && m.isNotEmpty;
-        }).toList();
+final savedEvents = _events.where((e) {
+  final m = sessionSelectionsByEvent[e.id];
+  return m != null && m.isNotEmpty;
+}).toList();
+
 
         page = SavedPage(
           profiles: _profiles,
           events: savedEvents,
 
-          // ✅ still satisfies SavedPage signature for now
-          sessionSelectionsByEvent: sessionSelections,
+sessionSelectionsByEvent: sessionSelectionsByEvent,
+
 
           onOpenEvent: (e) async {
             final full = await _loadEventWithSlots(e.id);
@@ -596,8 +631,11 @@ Future<void> _initDb() async {
                   profiles: _profiles,
 
                   // For UI display only (derived)
-                  sessionSelections:
-                      sessionSelections[eventId] ?? const <int, Set<int>>{},
+                  sessionSelections: sessionSelectionsByEvent[eventId] ?? const <int, Set<int>>{},
+
+                      slotSelections: _slotSelections,
+
+                      
 
 onUpdateSessionSelections: (map) async {
   final slots = _slotsOfEvent(full)..sort((a, b) => a.id.compareTo(b.id));
@@ -606,20 +644,23 @@ onUpdateSessionSelections: (map) async {
     // MERGE behavior:
     // update only the sessions present in `map`, don't clear other sessions.
     for (final entry in map.entries) {
-      final sessionIndex = entry.key;
-      if (sessionIndex < 0 || sessionIndex >= slots.length) continue;
+  final sessionIndex = entry.key;
+  final profSet = entry.value;
 
-      final slotId = slots[sessionIndex].id;
-      final profSet = entry.value;
+  // ✅ update ALL slots that belong to this sessionIndex
+  final matchingSlots = slots.where((s) => (s.sessionIndex ?? 0) == sessionIndex);
 
-      if (profSet.isEmpty) {
-        // If cleared, remove this one slot selection
-        _slotSelections.remove(slotId);
-      } else {
-        // Otherwise set/replace this one slot's selection
-        _slotSelections[slotId] = Set<int>.from(profSet);
-      }
+  for (final slot in matchingSlots) {
+    final slotId = slot.id;
+
+    if (profSet.isEmpty) {
+      _slotSelections.remove(slotId);
+    } else {
+      _slotSelections[slotId] = Set<int>.from(profSet);
     }
+  }
+}
+
 
     // Rebuild selected events from slot selections
     _selectedEventIds
@@ -640,25 +681,28 @@ onUpdateSessionSelections: (map) async {
           },
 
           onUnselectSession: (eventId, sessionIndex) {
-            // Map sessionIndex -> slotId using the same stable ordering used by derivation.
-            final ev = _events.where((x) => x.id == eventId).toList();
-            if (ev.isEmpty) return;
+  // Remove ALL slot selections for this sessionIndex (session can have multiple slots)
+  final ev = _events.where((x) => x.id == eventId).toList();
+  if (ev.isEmpty) return;
 
-            final slots = _slotsOfEvent(ev.first)..sort((a, b) => a.id.compareTo(b.id));
-            if (sessionIndex < 0 || sessionIndex >= slots.length) return;
+  final slots =
+      _slotsOfEvent(ev.first)..sort((a, b) => a.id.compareTo(b.id));
 
-            final slotId = slots[sessionIndex].id;
+  // Find every slot that belongs to this sessionIndex
+  final matchingSlots = slots.where((s) => (s.sessionIndex ?? 0) == sessionIndex);
 
-            setState(() {
-              _slotSelections.remove(slotId);
-              _selectedEventIds
-                ..clear()
-                ..addAll(_events
-                    .where((e) => _derivedSessionSelectionsByEvent()[e.id]?.isNotEmpty ?? false)
-                    .map((e) => e.id));
-            });
+  setState(() {
+    for (final slot in matchingSlots) {
+      _slotSelections.remove(slot.id);
+    }
 
-            _saveSlotSelectionsToPrefs();
+    // Rebuild selected events from slot selections (source of truth)
+    _selectedEventIds
+      ..clear()
+      ..addAll(_eventIdsFromSlotSelections().cast<Id>());
+  });
+
+  _saveSlotSelectionsToPrefs();
           },
         );
         break;
@@ -706,6 +750,8 @@ onUpdateSessionSelections: (map) async {
                   // For UI display only (derived)
                   sessionSelections:
                       sessionSelections[eventId] ?? const <int, Set<int>>{},
+                      slotSelections: _slotSelections,
+
 
                   onUpdateSessionSelections: (map) {
   // Translate legacy sessionIndex -> profiles into slotId -> profiles (source of truth)
@@ -2360,25 +2406,28 @@ class _DayColumnCard extends StatelessWidget {
               ),
             ),
           Expanded(
-            child: items.isEmpty
-                ? const SizedBox()
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final pip in shown) line(pip),
-                      if (remaining > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            '$remaining more',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: const Color(0xFF7D7A78),
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                    ],
+  child: items.isEmpty
+      ? const SizedBox()
+      : SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final pip in shown) line(pip),
+              if (remaining > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '$remaining more',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: const Color(0xFF7D7A78),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
+                ),
+            ],
+          ),
+        ),
           ),
         ],
       ),
