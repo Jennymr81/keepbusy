@@ -213,7 +213,7 @@ void _toggleSelectedEvent(Event e, bool isSelected) {
 
 
 
-Map<Id, Map<int, Set<int>>> _buildSessionSelectionsByEvent() {
+Map<Id, Map<int, Set<int>>> _legacyBuildSessionSelectionsByEvent() {
   final out = <Id, Map<int, Set<int>>>{};
 
   for (final ev in _events) {
@@ -524,11 +524,10 @@ Future<void> _initDb() async {
   @override
   Widget build(BuildContext context) {
     // Derived view used by Calendar/Saved/Search while persistence is slot-based
-    final sessionSelections = _derivedSessionSelectionsByEvent();
+final sessionSelectionsByEvent = sessionSelections;
 
-    Widget page;
+Widget page;
 
-    final sessionSelectionsByEvent = _buildSessionSelectionsByEvent();
 
 
     switch (idx) {
