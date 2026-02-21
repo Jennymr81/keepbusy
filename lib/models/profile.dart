@@ -2,6 +2,9 @@ import 'package:isar/isar.dart';
 
 part 'profile.g.dart';
 
+typedef ProfileId = Id;
+
+
 @collection
 class Profile {
   Id id = Isar.autoIncrement;

@@ -59,13 +59,23 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   List<Profile> _profiles = [];
   List<Event> _events = [];
 
+// 🔐 Simulated logged-in user
+String _currentUserId = 'user_001';
+
+
   // in-memory favorites / selected (by event Id)
   final Set<Id> _favoriteEventIds = <Id>{};
   final Set<Id> _selectedEventIds = <Id>{};
 
-  // ✅ Source of truth (persisted):
-  // slotId -> set of profile indexes into _profiles
-  final Map<int, Set<int>> _slotSelections = <int, Set<int>>{};
+// ✅ Source of truth (persisted per user):
+// userId -> (slotId -> set of profile indexes into _profiles)
+final Map<String, Map<int, Set<int>>> _userSlotSelections = {};
+
+// Always work against the current user's selections
+Map<int, Set<int>> get _slotSelections {
+  return _userSlotSelections[_currentUserId] ??= <int, Set<int>>{};
+}
+
 
   // ✅ Derived (not persisted):
   // eventId -> (sessionIndex -> set of profile indexes into _profiles)
@@ -98,6 +108,14 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
 
   int idx = 0;
 
+  // 🔎 Home → Search sync state
+String _searchQuery = '';
+String _searchZip = '';
+String _searchSort = 'Soonest';
+bool _searchFavoritesOnly = false;
+bool _searchSelectedOnly = false;
+
+
   void showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -123,22 +141,19 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   // ============================
 
   Set<Id> _eventIdsFromSlotSelections() {
-    // Build slotId -> eventId lookup from in-memory events (slotIds must be loaded).
-    final slotToEventId = <int, int>{};
+  final out = <Id>{};
 
-    for (final ev in _events) {
-      for (final s in ev.slotIds.toList()) {
-        slotToEventId[s.id] = ev.id;
+  for (final ev in _events) {
+    for (final slot in ev.slotIds) {
+      if (_slotSelections.containsKey(slot.id)) {
+        out.add(ev.id);
+        break;
       }
     }
-
-    final out = <Id>{};
-    for (final slotId in _slotSelections.keys) {
-      final eventId = slotToEventId[slotId];
-      if (eventId != null) out.add(eventId as Id);
-    }
-    return out;
   }
+
+  return out;
+}
 
   Future<void> _loadSlotSelectionsFromPrefs() async {
     try {
@@ -707,18 +722,30 @@ onUpdateSessionSelections: (map) async {
         break;
 
       case 4:
-        page = SimpleSearchPage(
-  key: ValueKey('search_${_slotSelections.length}_${_favoriteEventIds.length}'),
+  page = SimpleSearchPage(
+    key: ValueKey('search_${_slotSelections.length}_${_favoriteEventIds.length}'),
 
-          profiles: _profiles,
-          events: _events,
-          loadById: _loadEventWithSlots,
-          favoriteEventIds: _favoriteEventIds,
-          selectedEventIds: _selectedEventIds,
-          onToggleFavorite: _toggleFavoriteEvent,
-          onToggleSelected: _toggleSelectedEvent,
-          onEventDeleted: _handleEventDeletedFromSearch,
-          onOpenEvent: (e) async {
+    profiles: _profiles,
+    events: _events,
+    loadById: _loadEventWithSlots,
+    slotSelections: _slotSelections,
+
+    favoriteEventIds: _favoriteEventIds,
+    selectedEventIds: _selectedEventIds,
+
+    onToggleFavorite: _toggleFavoriteEvent,
+    onToggleSelected: _toggleSelectedEvent,
+    onEventDeleted: _handleEventDeletedFromSearch,
+
+
+    initialQuery: _searchQuery,
+    initialZip: _searchZip,
+    initialSort: _searchSort,
+    initialFavoritesOnly: _searchFavoritesOnly,
+    initialSelectedOnly: _searchSelectedOnly,
+
+    onOpenEvent: (e) async {
+
             final full = await _loadEventWithSlots(e.id);
             if (full == null) {
               if (!mounted) return;
@@ -854,47 +881,105 @@ onUpdateSessionSelections: (map) async {
   }
 
 
+
+
   // ==============================
   // HOME WIDGETS (SCROLL AREA)
   // ==============================
   Widget _home() => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1100),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 10),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
 
-                  // ✅ logo centered
-                  Center(
-                    child: Image.asset(
-                      'assets/keepbusy_logo.png',
-                      height: 34,
-                      fit: BoxFit.contain,
-                    ),
+            // ================= LOGO + TITLE =================
+            const SizedBox(height: 16),
+
+            Center(
+              child: Image.asset(
+                'assets/keepbusy_logo.png',
+                height: 40,
+                fit: BoxFit.contain,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            Text(
+              'Community Classes & Events',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ================= FULL WIDTH HERO =================
+            Stack(
+              alignment: Alignment.center,
+              children: [
+
+                // 🔹 Hero Image (TRUE full width)
+                SizedBox(
+                  height: MediaQuery.of(context).size.height,
+                  width: double.infinity,
+                  child: Image.asset(
+                    'assets/soccer_camp.jpg',
+                    fit: BoxFit.cover,
                   ),
+                ),
 
-                  const SizedBox(height: 6),
+                // 🔹 Dark overlay
+                Container(
+                  height: MediaQuery.of(context).size.height,
+                  width: double.infinity,
+                  color: Colors.black.withOpacity(0.25),
+                ),
 
-                  Text(
-                    'Community Classes & Events',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
+                // 🔹 Frosted search box (bottom-right, ~1/3 width)
+Positioned(
+  bottom: 220, // move slightly down/up by changing this
+  right: 28,
+  child: LayoutBuilder(
+    builder: (context, c) {
+      // About 1/3 of available width, with sane min/max so it looks good on all screens
+      final w = MediaQuery.of(context).size.width;
+      final panelW = (w * 0.34).clamp(320.0, 520.0);
 
-                  const SizedBox(height: 12),
+      return SizedBox(
+        width: panelW,
+        child: QuickSearchBar(
+          profiles: _profiles,
+          compact: false,
+          showToolbar: false,
+          onSearch: ({
+            required String what,
+            required String where,
+            required String sort,
+            required bool favoritesOnly,
+            required bool selectedOnly,
+          }) {
+            setState(() {
+              _searchQuery = what;
+              _searchZip = where;
+              _searchSort = sort;
+              _searchFavoritesOnly = favoritesOnly;
+              _searchSelectedOnly = selectedOnly;
+              idx = 4;
+            });
+          },
+        ),
+      );
+    },
+  ),
+),
+              ],
+            ),
 
-                  // ✅ Frosted header search
-                  QuickSearchBar(
-                    profiles: _profiles,
-                    compact: false,
-                    showToolbar: true,
-                  ),
+            const SizedBox(height: 40),
 
-                  const SizedBox(height: 18),
 
                   // ===== PROFILES PREVIEW =====
                   _DashSection(
@@ -1016,10 +1101,8 @@ onUpdateSessionSelections: (map) async {
                   ),
                 ],
               ),
-            ),
-          ),
-        ),
-      );
+      )
+  );
 
   /// Week preview pips for the HOME page.
   ///
@@ -1692,13 +1775,23 @@ class QuickSearchBar extends StatefulWidget {
   const QuickSearchBar({
     super.key,
     required this.profiles,
+    required this.onSearch, // ✅ NEW
     this.compact = false,
     this.showToolbar = true,
   });
 
   final List<Profile> profiles;
+  final void Function({
+    required String what,
+    required String where,
+    required String sort,
+    required bool favoritesOnly,
+    required bool selectedOnly,
+  }) onSearch; // ✅ NEW
+
   final bool compact;
   final bool showToolbar;
+
 
   @override
   State<QuickSearchBar> createState() => _QuickSearchBarState();
@@ -1719,13 +1812,18 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
     super.dispose();
   }
 
-  void _submit() {
-    final what = _whatCtrl.text.trim();
-    final where = _whereCtrl.text.trim();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Searching: $what  •  $where')),
-    );
-  }
+void _submit() {
+  widget.onSearch(
+    what: _whatCtrl.text.trim(),
+    where: _whereCtrl.text.trim(),
+    sort: _sort,
+    favoritesOnly: _favoritesOnly,
+    selectedOnly: _selectedOnly,
+  );
+}
+
+
+
 
   void _openAdvancedFiltersPreview() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1827,18 +1925,21 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
               }
 
               final btn = SizedBox(
-                height: fieldH,
-                width: btnWidth,
-                child: FilledButton.icon(
-                  onPressed: _submit,
-                  icon: const Icon(Icons.search),
-                  label: const Text('Search'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    backgroundColor: cs.primary,
-                  ),
-                ),
-              );
+  height: 52, // bigger button
+  width: double.infinity, // full width inside panel
+  child: FilledButton.icon(
+    onPressed: _submit,
+    icon: const Icon(Icons.search),
+    label: const Text('Search'),
+    style: FilledButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      backgroundColor: cs.primary,
+      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+  ),
+);
+
 
               Widget toolbarRow() {
                 final row = Row(
@@ -1933,63 +2034,31 @@ class _QuickSearchBarState extends State<QuickSearchBar> {
                 return row;
               }
 
-              if (isNarrow) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    field(
-                        ctrl: _whatCtrl,
-                        hint: 'Search classes & events',
-                        icon: Icons.search),
-                    SizedBox(height: gap),
-                    field(
-                        ctrl: _whereCtrl,
-                        hint: 'City or ZIP',
-                        icon: Icons.place_outlined),
-                    SizedBox(height: gap),
-                    Align(alignment: Alignment.center, child: btn),
-                    if (widget.showToolbar) ...[
-                      const SizedBox(height: 10),
-                      toolbarRow(),
-                    ],
-                  ],
-                );
-              }
-
               return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 6,
-                        child: field(
-                            ctrl: _whatCtrl,
-                            hint: 'Search classes & events',
-                            icon: Icons.search),
-                      ),
-                      SizedBox(width: gap),
-                      Expanded(
-                        flex: 4,
-                        child: field(
-                            ctrl: _whereCtrl,
-                            hint: 'City or ZIP',
-                            icon: Icons.place_outlined),
-                      ),
-                      SizedBox(width: gap),
-                      btn,
-                    ],
-                  ),
-                  if (widget.showToolbar) ...[
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: toolbarRow(),
-                    ),
-                  ],
-                ],
-              );
+  mainAxisSize: MainAxisSize.min,
+  crossAxisAlignment: CrossAxisAlignment.stretch,
+  children: [
+    field(
+      ctrl: _whatCtrl,
+      hint: 'Search classes & events',
+      icon: Icons.search,
+    ),
+    SizedBox(height: gap),
+    field(
+      ctrl: _whereCtrl,
+      hint: 'City or ZIP',
+      icon: Icons.place_outlined,
+    ),
+    SizedBox(height: gap + 4),
+    btn,
+
+    if (widget.showToolbar) ...[
+      const SizedBox(height: 10),
+      toolbarRow(),
+    ],
+  ],
+);
+
             },
           ),
         ),

@@ -39,7 +39,7 @@ class CalendarPage extends StatefulWidget {
   final VoidCallback onAddEvent;
 
   final Map<Id, Map<int, Set<int>>> sessionSelections;
-  final Map<int, Set<int>> slotSelections; // slotId -> profileIndexes
+  final Map<int, Set<int>> slotSelections;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -157,37 +157,38 @@ Timer? _hoverHideTimer;
   final Id? eventId = stub.id;
   if (eventId == null) continue;
 
-  final Map<int, Set<int>>? selBySession = widget.sessionSelections[eventId];
-  if (selBySession == null || selBySession.isEmpty) continue;
-
   final ev = await isar.events.get(eventId);
   if (ev == null) continue;
 
   await ev.slotIds.load();
 
   for (final slot in ev.slotIds) {
-    final idx = slot.sessionIndex ?? 0;
+    final slotId = slot.id;
+    if (slotId == 0) continue;
 
-    final Set<int> selectedProfiles =
-        (selBySession[idx] ?? const <int>{}).toSet(); // ✅ never null, strongly typed
+    // ✅ SOURCE OF TRUTH
+    final selectedProfiles =
+        widget.slotSelections[slotId] ?? const <int>{};
     if (selectedProfiles.isEmpty) continue;
 
-    final Set<int> safeProfiles = selectedProfiles
+    final safeProfiles = selectedProfiles
         .where((pi) => pi >= 0 && pi < widget.profiles.length)
         .toSet();
     if (safeProfiles.isEmpty) continue;
 
     final day = _dayKey(slot.date);
+
     (next[day] ??= <_CalItem>[]).add(
       _CalItem(
         event: ev,
         slot: slot,
-        sessionIndex: idx,
+        sessionIndex: slot.sessionIndex ?? 0,
         profileIndexes: safeProfiles,
       ),
     );
   }
 }
+
 
 
     if (!mounted) return;
@@ -407,19 +408,21 @@ Future<void> _openDayQuickView(DateTime day) async {
               Navigator.pop(context);
               await Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => EventDetailsPage(
+  builder: (_) => EventDetailsPage(
   event: it.event,
   profile: widget.profiles[safeIndex],
   profiles: widget.profiles,
 
-  // always type the empty map
-  sessionSelections: widget.sessionSelections[it.event.id] ?? const <int, Set<int>>{},
+  // derived (for UI)
+  sessionSelections:
+      widget.sessionSelections[it.event.id] ?? const <int, Set<int>>{},
 
-  // slot selections are keyed by slotId (NOT eventId)
+  // source of truth map (slotId -> profiles)
   slotSelections: widget.slotSelections,
 ),
 
-                ),
+)
+
               );
             },
           );
@@ -885,16 +888,22 @@ final extraCount = visibleItems.length - shown.length;
               onTap: () {
                 final eventId = it.event.id;
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => EventDetailsPage(
-                      event: it.event,
-                      profile: profile,
-                      profiles: widget.profiles,
-                      sessionSelections: widget.sessionSelections[eventId] ?? const {},
-                      slotSelections: widget.slotSelections[eventId] ?? const {},
-                    ),
-                  ),
-                );
+  MaterialPageRoute(
+    builder: (_) => EventDetailsPage(
+      event: it.event,
+      profile: profile,
+      profiles: widget.profiles,
+
+      // derived (UI only)
+      sessionSelections:
+          widget.sessionSelections[it.event.id] ?? const <int, Set<int>>{},
+
+      // source of truth (slotId -> profiles)
+      slotSelections: widget.slotSelections,
+    ),
+  ),
+);
+
               },
             );
           }),

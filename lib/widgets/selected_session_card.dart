@@ -35,7 +35,7 @@ class SelectedSessionCard extends StatelessWidget {
   final VoidCallback? onUnselect;
 
   ImageProvider _imageProvider(String? src) {
-    const fallback = 'assets/images/soccer_camp.jpg'; // ✅ make sure this exists
+    const fallback = 'assets/soccer_camp.jpg'; 
 
     if (src == null || src.trim().isEmpty) {
       return const AssetImage(fallback);

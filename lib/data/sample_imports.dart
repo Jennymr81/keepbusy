@@ -50,7 +50,7 @@ Future<void> importSpanishMexicanDanceSample() async {
 
   // (Unused here but handy if you ever need it for sample images)
   ImageProvider _savedImageProvider(String? src) {
-    const fallback = 'assets/images/soccer_camp.jpg';
+    const fallback = 'assets/soccer_camp.jpg';
 
     if (src == null || src.trim().isEmpty) {
       return const AssetImage(fallback);

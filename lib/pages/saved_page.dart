@@ -193,7 +193,7 @@ class _SavedPageState extends State<SavedPage> {
 
       final imageSrc = (ev.imagePath?.trim().isNotEmpty == true)
           ? ev.imagePath!.trim()
-          : (_firstImageLink(ev) ?? 'assets/images/soccer_camp.jpg');
+          : (_firstImageLink(ev) ?? 'assets/soccer_camp.jpg');
 
       for (final entry in selectionsForEvent.entries) {
         final sessionIndex = entry.key;
@@ -493,7 +493,7 @@ class SelectedSessionCard extends StatelessWidget {
   final VoidCallback? onUnselect;
 
   ImageProvider _imageProvider(String? src) {
-    const fallback = 'assets/images/soccer_camp.jpg';
+    const fallback = 'assets/soccer_camp.jpg';
 
     if (src == null || src.trim().isEmpty) {
       return const AssetImage(fallback);

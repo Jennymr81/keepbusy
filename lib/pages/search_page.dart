@@ -23,7 +23,6 @@ import 'dart:math';
 
 // ==============================
 // Search helpers / constants
-// (duplicated from main.dart for now)
 // ==============================
 
 const List<String> kSearchInterestOptions = [
@@ -50,6 +49,12 @@ const List<String> kWeekdayShort = [
   'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
 ];
 
+enum SortOption { soonest, costLow, titleAZ, newest, relevant, closest }
+
+
+// ==============================
+// Utility helpers
+// ==============================
 TimeOfDay? minToTime(int? m) =>
     m == null ? null : TimeOfDay(hour: m ~/ 60, minute: m % 60);
 
@@ -74,29 +79,47 @@ Color? _profileColor(Profile? p) {
 }
 
 
-enum SortOption { soonest, costLow, titleAZ, newest, relevant, closest }
-
-
 
 // ==============================
 // Simple Search (Quick cards)
 // ==============================
 class SimpleSearchPage extends StatefulWidget {
+
+  final List<Profile> profiles;
+  final List<Event> events;
+
+  final Map<int, Set<int>> slotSelections;
+
+  // ✅ NEW
+  final String initialQuery;
+  final String initialZip;
+  final String initialSort;
+  final bool initialFavoritesOnly;
+  final bool initialSelectedOnly;
+
   const SimpleSearchPage({
     super.key,
     required this.profiles,
     required this.events,
     required this.onOpenEvent,
     required this.loadById,
+    required this.slotSelections,
     this.favoriteEventIds,
     this.selectedEventIds,
     this.onToggleFavorite,
     this.onToggleSelected,
     this.onEventDeleted,
+
+    // ✅ NEW
+    this.initialQuery = '',
+    this.initialZip = '',
+    this.initialSort = 'Soonest',
+    this.initialFavoritesOnly = false,
+    this.initialSelectedOnly = false,
   });
 
-  final List<Profile> profiles;
-  final List<Event> events;
+
+  
   final void Function(Event e) onOpenEvent;
   final Future<Event?> Function(Id id)? loadById;
 
@@ -114,23 +137,150 @@ class SimpleSearchPage extends StatefulWidget {
   State<SimpleSearchPage> createState() => _SimpleSearchPageState();
 }
 
-
+// ==============================
+// State / Filter State
+// ==============================
 
 class _SimpleSearchPageState extends State<SimpleSearchPage> {
+    // ---- Core state ----
   String _query = '';
   late List<Event> _events;
+  SortOption _sort = SortOption.soonest;
 
+
+ // ---- Persistence ----
     Isar? _isar;
   StreamSubscription<void>? _watch;
 
-  SortOption _sort = SortOption.soonest;
 
 // ---- Location state (needed for Closest / radius) ----
 bool _locLoading = false;
 String? _locError;
 Position? _me;
 
-// ---- Geo: miles between two lat/lng points ----
+      // ---- Filter state ----
+  final TextEditingController _searchCtl = TextEditingController();
+  final TextEditingController _zipCtl = TextEditingController();
+  final TextEditingController _radiusCtl = TextEditingController();
+  final TextEditingController _ageMinCtl = TextEditingController();
+  final TextEditingController _ageMaxCtl = TextEditingController();
+  final TextEditingController _costCtl = TextEditingController();
+
+
+  int? _ageMin;      // 0–80+
+  int? _ageMax;      // 0–80+
+  double? _maxCost;  // "Cost under $___"
+
+     // age choices (3–18)
+  final List<int> _ageOptions = List<int>.generate(16, (i) => 3 + i);
+
+
+  final Set<int> _weekdayFilters = <int>{};
+  final Set<String> _interestFilters = <String>{};
+  final Set<String> _levelFilters = <String>{};
+
+  bool _onlyFavorites = false;
+  bool _onlySelected = false;
+  bool _showAdvanced = false;
+
+  static const List<String> _levels = ['Beginner', 'Intermediate', 'Advanced'];
+
+
+
+  // ==============================
+  // Lifecycle
+  // ==============================
+@override
+void initState() {
+  super.initState();
+
+  _events = List<Event>.from(widget.events);
+
+  // ✅ Apply initial filters from HomePage
+  _query = widget.initialQuery;
+  _searchCtl.text = widget.initialQuery;
+  _zipCtl.text = widget.initialZip;
+
+  _onlyFavorites = widget.initialFavoritesOnly;
+  _onlySelected = widget.initialSelectedOnly;
+
+  _sort = _mapSortString(widget.initialSort);
+
+  if (kIsWeb) return;
+
+  _isar = Isar.getInstance();
+  if (_events.isEmpty && _isar != null) {
+    _loadFromIsar();
+    _watch = _isar!.events.watchLazy().listen((_) => _loadFromIsar());
+  }
+}
+
+
+
+@override
+void didUpdateWidget(covariant SimpleSearchPage old) {
+  super.didUpdateWidget(old);
+  if (!identical(old.events, widget.events)) {
+    setState(() => _events = List<Event>.from(widget.events));
+  }
+}
+
+
+  @override
+void dispose() {
+  _watch?.cancel();
+  _searchCtl.dispose();
+  _zipCtl.dispose();
+  _radiusCtl.dispose();
+  _ageMinCtl.dispose();
+  _ageMaxCtl.dispose();
+  _costCtl.dispose();
+  super.dispose();
+}
+
+
+SortOption _mapSortString(String value) {
+  switch (value) {
+    case 'Closest':
+      return SortOption.closest;
+    case 'Lowest price':
+      return SortOption.costLow;
+    case 'Newest added':
+      return SortOption.newest;
+    case 'Most relevant':
+      return SortOption.relevant;
+    case 'Title A–Z':
+      return SortOption.titleAZ;
+    case 'Soonest':
+    default:
+      return SortOption.soonest;
+  }
+}
+
+
+  // ==============================
+  // Data loading / logic helpers
+  // ==============================
+Future<void> _loadFromIsar() async {
+  try {
+    final list = await _isar!.events.where().findAll();
+
+    // IMPORTANT: load Isar link data (slots) so weekday filtering works
+    for (final ev in list) {
+      try {
+        await ev.slotIds.load();
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() => _events = list);
+  } catch (e) {
+    // optional: debugPrint('Load from Isar failed: $e');
+  }
+}
+
+
+// ---- LOCATION HELPER --- Geo: miles between two lat/lng points ----
 double _milesBetween(double lat1, double lon1, double lat2, double lon2) {
   const earthRadiusMeters = 6371000.0;
   double toRad(double d) => d * pi / 180.0;
@@ -191,6 +341,8 @@ Future<void> _ensureLocation() async {
   }
 }
 
+
+
 // ---- Relevance score for "Most relevant" sorting ----
 int _relevanceScore(Event e, String qRaw) {
   final q = qRaw.trim().toLowerCase();
@@ -223,42 +375,34 @@ int _relevanceScore(Event e, String qRaw) {
   return score;
 }
 
+void _resetFilters() {
+    setState(() {
+      _searchCtl.clear();
+      _zipCtl.clear();
+      _radiusCtl.clear();
+      _ageMinCtl.clear();
+      _ageMaxCtl.clear();
+      _costCtl.clear();
+      _costCtl.dispose();
 
 
-      // ---- Filter state ----
-  final TextEditingController _searchCtl = TextEditingController();
-  final TextEditingController _zipCtl = TextEditingController();
-  final TextEditingController _radiusCtl = TextEditingController();
-  final TextEditingController _ageMinCtl = TextEditingController();
-  final TextEditingController _ageMaxCtl = TextEditingController();
-  final TextEditingController _costCtl = TextEditingController();
+      _query = '';
+      _ageMin = null;
+      _ageMax = null;
+      _maxCost = null;
+
+        _weekdayFilters.clear();
+      _interestFilters.clear();
+      _onlyFavorites = false;
+      _onlySelected = false;
+      _levelFilters.clear();
+    });
+  }
 
 
-  int? _ageMin;      // 0–80+
-  int? _ageMax;      // 0–80+
-  double? _maxCost;  // "Cost under $___"
-
-  // 1 = Monday ... 7 = Sunday
-  final Set<int> _weekdayFilters = <int>{};
-
-  // Interest labels from kSearchInterestOptions (limit 5)
-  final Set<String> _interestFilters = <String>{};
-
-    bool _onlyFavorites = false;
-  bool _onlySelected = false;
-
-  bool _showAdvanced = false;
-
-  // Level filters (up to 2 at a time)
-  final Set<String> _levelFilters = <String>{};
-  static const List<String> _levels = ['Beginner', 'Intermediate', 'Advanced'];
-
-
-
-
-  // age choices (3–18)
-  final List<int> _ageOptions = List<int>.generate(16, (i) => 3 + i);
-
+  // ==============================
+  // UI helpers (filters, chips, images)
+  // ==============================
 
 String? _firstImageLink(Event ev) {
   // 1) Prefer the model field if you added Event.imagePath
@@ -297,86 +441,9 @@ String? _firstImageLink(Event ev) {
 }
 
 
-@override
-void initState() {
-  super.initState();
-  _events = List<Event>.from(widget.events);
-
-  // On web, just use the events list passed in; skip Isar instance/watch.
-  if (kIsWeb) return;
-
-  _isar = Isar.getInstance(); // assumes Isar.open(...) ran at app start
-  if (_events.isEmpty && _isar != null) {
-    _loadFromIsar();
-    // live updates when Events change
-    _watch = _isar!.events.watchLazy().listen((_) => _loadFromIsar());
-  }
-}
-Future<void> _loadFromIsar() async {
-  try {
-    final list = await _isar!.events.where().findAll();
-
-    // IMPORTANT: load Isar link data (slots) so weekday filtering works
-    for (final ev in list) {
-      try {
-        await ev.slotIds.load();
-      } catch (_) {}
-    }
-
-    if (!mounted) return;
-    setState(() => _events = list);
-  } catch (e) {
-    // optional: debugPrint('Load from Isar failed: $e');
-  }
-}
-
-
-
-@override
-void didUpdateWidget(covariant SimpleSearchPage old) {
-  super.didUpdateWidget(old);
-  if (!identical(old.events, widget.events)) {
-    setState(() => _events = List<Event>.from(widget.events));
-  }
-}
-
-
-  @override
-void dispose() {
-  _watch?.cancel();
-  _searchCtl.dispose();
-  _zipCtl.dispose();
-  _radiusCtl.dispose();
-  _ageMinCtl.dispose();
-  _ageMaxCtl.dispose();
-  _costCtl.dispose();
-  super.dispose();
-}
-
-  void _resetFilters() {
-    setState(() {
-      _searchCtl.clear();
-      _zipCtl.clear();
-      _radiusCtl.clear();
-      _ageMinCtl.clear();
-      _ageMaxCtl.clear();
-      _costCtl.clear();
-      _costCtl.dispose();
-
-
-      _query = '';
-      _ageMin = null;
-      _ageMax = null;
-      _maxCost = null;
-
-        _weekdayFilters.clear();
-      _interestFilters.clear();
-      _onlyFavorites = false;
-      _onlySelected = false;
-      _levelFilters.clear();
-    });
-  }
-
+   // ==============================
+  // FILTER UI HELPERS
+  // ==============================
 
 Future<void> _openFiltersPopup() async {
   final width = MediaQuery.of(context).size.width;
@@ -893,6 +960,11 @@ Widget _activeFilterChips() {
 
 
 
+  // ==============================
+  // BUILD
+  // ==============================
+
+
   @override
   Widget build(BuildContext context) {
   final queryLower = _query.trim().toLowerCase();
@@ -1061,14 +1133,34 @@ if (_weekdayFilters.isNotEmpty) {
       }
 
 
-      // 7) Favorites / Selected (uses optional sets of IDs if provided)
-      if (_onlyFavorites || _onlySelected) {
-        final favIds = widget.favoriteEventIds;
-        final selIds = widget.selectedEventIds;
+     // 7) Favorites / Selected
+if (_onlyFavorites) {
+  final favIds = widget.favoriteEventIds;
+  if (!(favIds?.contains(e.id) ?? false)) return false;
+}
 
-        if (_onlyFavorites && !(favIds?.contains(e.id) ?? false)) return false;
-        if (_onlySelected && !(selIds?.contains(e.id) ?? false)) return false;
+if (_onlySelected) {
+  bool hasSelectedSlot = false;
+
+  try {
+    for (final slot in e.slotIds) {
+      final slotId = slot.id;
+      if (slotId == 0) continue;
+
+      final selectedProfiles =
+          widget.slotSelections[slotId] ?? const <int>{};
+
+      if (selectedProfiles.isNotEmpty) {
+        hasSelectedSlot = true;
+        break;
       }
+    }
+  } catch (_) {}
+
+  if (!hasSelectedSlot) return false;
+}
+
+
 
       return true;
     }).toList();
@@ -1478,7 +1570,7 @@ LayoutBuilder(
                         imageSrc: (ev.imagePath?.trim().isNotEmpty == true)
                             ? ev.imagePath
                             : (_firstImageLink(ev) ??
-                                'assets/images/soccer_camp.jpg'),
+                                'assets/soccer_camp.jpg'),
                         onView: () => widget.onOpenEvent(ev),
                         onEdit: () async {
                           final result =

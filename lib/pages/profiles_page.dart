@@ -651,7 +651,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  static const kDefaultAvatarAsset = 'assets/images/default_avatar.png';
+  static const kDefaultAvatarAsset = 'assets/default_avatar.png';
 
   ImageProvider _avatarProvider(String? src) {
     final s = (src ?? '').trim();

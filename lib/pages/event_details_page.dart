@@ -52,11 +52,15 @@ class EventDetailsPage extends StatefulWidget {
   final Profile? profile; // nullable
   final List<Profile> profiles;
 
-  /// slotId -> set of profile indexes
+/// slotId -> set of profile indexes (derived, UI-only)
 final Map<Id, Set<int>> sessionSelections;
-final void Function(Map<Id, Set<int>>)? onUpdateSessionSelections;
 
-  final dynamic slotSelections;
+/// slotId -> set of profile indexes (SOURCE OF TRUTH)
+final Map<Id, Set<int>> slotSelections;
+
+/// Notify parent after slot-level updates
+final void Function(Map<int, Set<int>>)? onUpdateSessionSelections;
+
 
 
   @override
@@ -136,6 +140,14 @@ void initState() {
 
     return 'Profile ${index + 1}';
   }
+
+    /// Canonical identifier for a profile *within this page*.
+  /// 
+  /// IMPORTANT:
+  /// - Today: returns the profile index
+  /// - Future: can return profile.id or userId without changing UI logic
+  int _profileKey(int index) => index;
+
 
   Future<Event> _upsertEventWithSlots(Event e, List<EventSlot> slots) async {
     final isar = await getIsar();
@@ -360,7 +372,7 @@ void initState() {
     // Figure out which image to show for this event
     final imageSrc = (_event.imagePath?.trim().isNotEmpty == true)
         ? _event.imagePath!.trim()
-        : 'assets/images/soccer_camp.jpg';
+        : 'assets/soccer_camp.jpg';
 
     // ----- build one SelectedSessionCard per *selected* session -----
     final List<Widget> cards = [];
@@ -557,18 +569,14 @@ final forLabel = selected.isEmpty
 // ✅ Write the same selected set to EACH slot in this session
 // ✅ Then rebuild the FULL session map from slot selections (source of truth)
 setState(() {
+  final mapped = result.map(_profileKey).toSet();
+
   for (final sid in slotIds) {
-    _slotSelectedProfileIndexes[sid] = Set<int>.from(result);
+    _slotSelectedProfileIndexes[sid] = Set<int>.from(mapped);
   }
 
-  // ✅ Recompute session selections from ALL slots (keeps sessions 1..10 intact)
   _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
 });
-
-// ✅ Notify parent with the FULL session map (prevents overwriting other sessions)
-widget.onUpdateSessionSelections?.call(
-  Map<int, Set<int>>.from(_sessionSelectedProfileIndexes),
-);
 
 
 }
