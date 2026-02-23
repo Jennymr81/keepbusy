@@ -61,7 +61,12 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
 
 // 🔐 Simulated logged-in user
 String _currentUserId = 'user_002';
-
+// 🔄 Dev-only fake users
+final List<String> _devUsers = [
+  'user_001',
+  'user_002',
+  'user_003',
+];
 
   // in-memory favorites / selected (by event Id)
   final Set<Id> _favoriteEventIds = <Id>{};
@@ -193,6 +198,23 @@ Future<void> _saveSlotSelectionsToPrefs() async {
   }
 }
 
+Future<void> _switchUser(String userId) async {
+  if (userId == _currentUserId) return;
+
+  setState(() {
+    _currentUserId = userId;
+  });
+
+  await _loadSlotSelectionsFromPrefs();
+
+  if (!mounted) return;
+
+  setState(() {
+    _selectedEventIds
+      ..clear()
+      ..addAll(_eventIdsFromSlotSelections());
+  });
+}
   void _toggleFavoriteEvent(Event e, bool isFav) {
     setState(() {
       if (isFav) {
@@ -671,6 +693,8 @@ Widget page;
   );
   break;
 
+  
+
       case 4:
   page = SimpleSearchPage(
     key: ValueKey(
@@ -763,16 +787,41 @@ Widget page;
       builder: (context, c) {
         final wide = c.maxWidth > 720;
 
-        final appBar = AppBar(
-          title: const Text('KeepBusy'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.download),
-              tooltip: 'Export events to CSV',
-              onPressed: _exportEventsToCsv,
-            ),
-          ],
-        );
+        // 🔄 DEV ONLY — remove before production
+final appBar = AppBar(
+  title: const Text('KeepBusy'),
+  actions: [
+    IconButton(
+      icon: const Icon(Icons.download),
+      tooltip: 'Export events to CSV',
+      onPressed: _exportEventsToCsv,
+    ),
+
+    // 🔄 DEV ONLY — temporary user switcher
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: DropdownButton<String>(
+        value: _currentUserId,
+        underline: const SizedBox(),
+        icon: const Icon(Icons.person, color: Colors.white),
+        dropdownColor: Colors.white,
+        onChanged: (value) {
+          if (value != null) {
+            _switchUser(value);
+          }
+        },
+        items: _devUsers
+            .map(
+              (user) => DropdownMenuItem<String>(
+                value: user,
+                child: Text(user),
+              ),
+            )
+            .toList(),
+      ),
+    ),
+  ],
+);
 
         if (wide) {
           return Scaffold(

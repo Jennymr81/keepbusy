@@ -34,7 +34,7 @@ DateTime? createdAt;
   double? fee;
   String? feeNote;
 
-  // legacy, safe to keep
+  // Used for grouping slots into sessions in UI (not persistence)
   int? sessionIndex;
 
   // Text
