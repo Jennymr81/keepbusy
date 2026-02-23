@@ -9,7 +9,7 @@ import 'package:isar/isar.dart';
 
 import '../data/db.dart';
 import '../models/event_models.dart';
-import '../repositories/local/saved_repository_isar.dart';
+import 'package:keepbusy/repositories/local/saved_repository_isar.dart';
 import '../utils/file_utils.dart';
 import '../utils/profile_label.dart';
 import '../widgets/image_helpers.dart';
@@ -60,7 +60,7 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   List<Event> _events = [];
 
 // 🔐 Simulated logged-in user
-String _currentUserId = 'user_001';
+String _currentUserId = 'user_002';
 
 
   // in-memory favorites / selected (by event Id)
@@ -77,35 +77,30 @@ Map<int, Set<int>> get _slotSelections {
 }
 
 
-  // ✅ Derived (not persisted):
-  // eventId -> (sessionIndex -> set of profile indexes into _profiles)
-  //
-  // SessionIndex is defined as the slot's index in a stable ordering (by slotId).
-  // This keeps Calendar/Saved/Search working while you finish migrating those pages.
-  Map<Id, Map<int, Set<int>>> get sessionSelections {
-    final out = <Id, Map<int, Set<int>>>{};
+ Map<Id, Map<int, Set<int>>> get sessionSelections {
+  final out = <Id, Map<int, Set<int>>>{};
 
-    for (final ev in _events) {
-      final slots = ev.slotIds.toList();
-      if (slots.isEmpty) continue;
+  for (final ev in _events) {
+    final bySession = <int, Set<int>>{};
 
-      // stable order so sessionIndex doesn't jump around
-      slots.sort((a, b) => a.id.compareTo(b.id));
+    for (final slot in ev.slotIds) {
+      final slotId = slot.id;
+      if (slotId == 0) continue;
 
-      final sessions = <int, Set<int>>{};
-      for (var i = 0; i < slots.length; i++) {
-        final slotId = slots[i].id;
-        final profSet = _slotSelections[slotId];
-        if (profSet == null || profSet.isEmpty) continue;
-        sessions[i] = Set<int>.from(profSet);
-      }
+      final profSet = _slotSelections[slotId];
+      if (profSet == null || profSet.isEmpty) continue;
 
-      if (sessions.isNotEmpty) out[ev.id] = sessions;
+      final sessionKey = slot.sessionIndex ?? 0;
+      (bySession[sessionKey] ??= <int>{}).addAll(profSet);
     }
 
-    return out;
+    if (bySession.isNotEmpty) {
+      out[ev.id] = bySession;
+    }
   }
 
+  return out;
+}
   int idx = 0;
 
   // 🔎 Home → Search sync state
@@ -157,7 +152,7 @@ bool _searchSelectedOnly = false;
 
   Future<void> _loadSlotSelectionsFromPrefs() async {
     try {
-      final loaded = await SavedRepositoryIsar.load();
+      final loaded = await SavedRepositoryIsar.load(_currentUserId);
 
       if (!mounted) return;
       setState(() {
@@ -183,19 +178,20 @@ bool _searchSelectedOnly = false;
     }
   }
 
-  Future<void> _saveSlotSelectionsToPrefs() async {
-    try {
-      await SavedRepositoryIsar.save(
-        favoriteEventIds: _favoriteEventIds.map((e) => e.toInt()).toSet(),
-        slotSelections: _slotSelections.map(
-          (slotId, profSet) => MapEntry(slotId, Set<int>.from(profSet)),
-        ),
-      );
-    } catch (e, st) {
-      debugPrint('Failed to save saved state: $e');
-      debugPrintStack(stackTrace: st);
-    }
+Future<void> _saveSlotSelectionsToPrefs() async {
+  try {
+    await SavedRepositoryIsar.save(
+      userId: _currentUserId, // ✅ NEW
+      favoriteEventIds: _favoriteEventIds.map((e) => e.toInt()).toSet(),
+      slotSelections: _slotSelections.map(
+        (slotId, profSet) => MapEntry(slotId, Set<int>.from(profSet)),
+      ),
+    );
+  } catch (e, st) {
+    debugPrint('Failed to save saved state: $e');
+    debugPrintStack(stackTrace: st);
   }
+}
 
   void _toggleFavoriteEvent(Event e, bool isFav) {
     setState(() {
@@ -224,32 +220,6 @@ void _toggleSelectedEvent(Event e, bool isSelected) {
   });
 
   _saveSlotSelectionsToPrefs();
-}
-
-
-
-Map<Id, Map<int, Set<int>>> _legacyBuildSessionSelectionsByEvent() {
-  final out = <Id, Map<int, Set<int>>>{};
-
-  for (final ev in _events) {
-    final bySession = <int, Set<int>>{};
-
-    // IMPORTANT: ev.slotIds must already be loaded in _initDbAndLoad()
-    for (final slot in ev.slotIds) {
-      final sid = slot.id;
-      if (sid == 0) continue;
-
-      final selectedProfiles = _slotSelections[sid];
-      if (selectedProfiles == null || selectedProfiles.isEmpty) continue;
-
-      final sessionKey = slot.sessionIndex ?? 0;
-      (bySession[sessionKey] ??= <int>{}).addAll(selectedProfiles);
-    }
-
-    if (bySession.isNotEmpty) out[ev.id] = bySession;
-  }
-
-  return out;
 }
 
 
@@ -602,142 +572,118 @@ Widget page;
         break;
 
       case 3:
-final savedEvents = _events.where((e) {
-  final m = sessionSelectionsByEvent[e.id];
-  return m != null && m.isNotEmpty;
-}).toList();
+  final savedEvents = _events.where((e) {
+    final m = sessionSelectionsByEvent[e.id];
+    return m != null && m.isNotEmpty;
+  }).toList();
 
+  page = SavedPage(
+    profiles: _profiles,
+    events: savedEvents,
+    sessionSelectionsByEvent: sessionSelectionsByEvent,
 
-        page = SavedPage(
-          profiles: _profiles,
-          events: savedEvents,
-
-sessionSelectionsByEvent: sessionSelectionsByEvent,
-
-
-          onOpenEvent: (e) async {
-            final full = await _loadEventWithSlots(e.id);
-            if (full == null) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Event not found')),
-              );
-              await _reloadEvents();
-              return;
-            }
-
-            final selIndexOK =
-                (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
-            final sel = selIndexOK
-                ? _profiles[e.profileIndex]
-                : (_profiles.isNotEmpty ? _profiles.first : null);
-
-            if (!context.mounted) return;
-
-            final eventId = full.id;
-
-            // Push details. Details page writes slot selections.
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => EventDetailsPage(
-                  event: full,
-                  profile: sel,
-                  profiles: _profiles,
-
-                  // For UI display only (derived)
-                  sessionSelections: sessionSelectionsByEvent[eventId] ?? const <int, Set<int>>{},
-
-                      slotSelections: _slotSelections,
-
-                      
-
-onUpdateSessionSelections: (map) async {
-  final slots = _slotsOfEvent(full)..sort((a, b) => a.id.compareTo(b.id));
-
-  setState(() {
-    // MERGE behavior:
-    // update only the sessions present in `map`, don't clear other sessions.
-    for (final entry in map.entries) {
-  final sessionIndex = entry.key;
-  final profSet = entry.value;
-
-  // ✅ update ALL slots that belong to this sessionIndex
-  final matchingSlots = slots.where((s) => (s.sessionIndex ?? 0) == sessionIndex);
-
-  for (final slot in matchingSlots) {
-    final slotId = slot.id;
-
-    if (profSet.isEmpty) {
-      _slotSelections.remove(slotId);
-    } else {
-      _slotSelections[slotId] = Set<int>.from(profSet);
-    }
-  }
-}
-
-
-    // Rebuild selected events from slot selections
-    _selectedEventIds
-      ..clear()
-      ..addAll(_eventIdsFromSlotSelections().cast<Id>());
-  });
-
-  await _saveSlotSelectionsToPrefs();
-},
-
-
-                ),
-              ),
-            );
-
-            // After returning, refresh slot selections (source of truth)
-            await _loadSlotSelectionsFromPrefs();
-          },
-
-          onUnselectSession: (eventId, sessionIndex) {
-  // Remove ALL slot selections for this sessionIndex (session can have multiple slots)
-  final ev = _events.where((x) => x.id == eventId).toList();
-  if (ev.isEmpty) return;
-
-  final slots =
-      _slotsOfEvent(ev.first)..sort((a, b) => a.id.compareTo(b.id));
-
-  // Find every slot that belongs to this sessionIndex
-  final matchingSlots = slots.where((s) => (s.sessionIndex ?? 0) == sessionIndex);
-
-  setState(() {
-    for (final slot in matchingSlots) {
-      _slotSelections.remove(slot.id);
-    }
-
-    // Rebuild selected events from slot selections (source of truth)
-    _selectedEventIds
-      ..clear()
-      ..addAll(_eventIdsFromSlotSelections().cast<Id>());
-  });
-
-  _saveSlotSelectionsToPrefs();
-          },
+    onOpenEvent: (e) async {
+      final full = await _loadEventWithSlots(e.id);
+      if (full == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Event not found')),
         );
-        break;
+        await _reloadEvents();
+        return;
+      }
+
+      final selIndexOK =
+          (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
+      final sel = selIndexOK
+          ? _profiles[e.profileIndex]
+          : (_profiles.isNotEmpty ? _profiles.first : null);
+
+      if (!context.mounted) return;
+
+      final eventId = full.id;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventDetailsPage(
+            event: full,
+            profile: sel,
+            profiles: _profiles,
+            sessionSelections:
+                sessionSelectionsByEvent[eventId] ?? const <int, Set<int>>{},
+            slotSelections: _slotSelections,
+
+            onUpdateSessionSelections: (slotMap) async {
+              debugPrint('🔥 SAVED CALLBACK FIRED: $slotMap');
+
+              setState(() {
+                final slots = _slotsOfEvent(full);
+                final eventSlotIds = slots.map((s) => s.id).toSet();
+
+                // Clear old selections for this event
+                _slotSelections.removeWhere(
+                    (slotId, _) => eventSlotIds.contains(slotId));
+
+                // Apply new slot-level selections directly
+                for (final entry in slotMap.entries) {
+                  final slotId = entry.key;
+                  final profSet = entry.value;
+                  if (profSet.isNotEmpty) {
+                    _slotSelections[slotId] = Set<int>.from(profSet);
+                  }
+                }
+
+                _selectedEventIds
+                  ..clear()
+                  ..addAll(_eventIdsFromSlotSelections());
+              });
+
+              await _saveSlotSelectionsToPrefs();
+            },
+          ),
+        ),
+      );
+
+    },
+
+    onUnselectSession: (eventId, sessionIndex) {
+      final ev = _events.where((x) => x.id == eventId).toList();
+      if (ev.isEmpty) return;
+
+      final slots =
+          _slotsOfEvent(ev.first)..sort((a, b) => a.id.compareTo(b.id));
+
+      final matchingSlots =
+          slots.where((s) => (s.sessionIndex ?? 0) == sessionIndex);
+
+      setState(() {
+        for (final slot in matchingSlots) {
+          _slotSelections.remove(slot.id);
+        }
+
+        _selectedEventIds
+          ..clear()
+          ..addAll(_eventIdsFromSlotSelections().cast<Id>());
+      });
+
+      _saveSlotSelectionsToPrefs();
+    },
+  );
+  break;
 
       case 4:
   page = SimpleSearchPage(
-    key: ValueKey('search_${_slotSelections.length}_${_favoriteEventIds.length}'),
-
+    key: ValueKey(
+        'search_${_slotSelections.length}_${_favoriteEventIds.length}'),
     profiles: _profiles,
     events: _events,
     loadById: _loadEventWithSlots,
     slotSelections: _slotSelections,
-
     favoriteEventIds: _favoriteEventIds,
     selectedEventIds: _selectedEventIds,
-
     onToggleFavorite: _toggleFavoriteEvent,
     onToggleSelected: _toggleSelectedEvent,
     onEventDeleted: _handleEventDeletedFromSearch,
-
-
     initialQuery: _searchQuery,
     initialZip: _searchZip,
     initialSort: _searchSort,
@@ -745,79 +691,69 @@ onUpdateSessionSelections: (map) async {
     initialSelectedOnly: _searchSelectedOnly,
 
     onOpenEvent: (e) async {
-
-            final full = await _loadEventWithSlots(e.id);
-            if (full == null) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Event not found')),
-              );
-              await _reloadEvents();
-              return;
-            }
-
-            final selIndexOK =
-                (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
-            final sel = selIndexOK
-                ? _profiles[e.profileIndex]
-                : (_profiles.isNotEmpty ? _profiles.first : null);
-
-            if (!context.mounted) return;
-
-            final eventId = full.id;
-
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => EventDetailsPage(
-                  event: full,
-                  profile: sel,
-                  profiles: _profiles,
-
-                  // For UI display only (derived)
-                  sessionSelections:
-                      sessionSelections[eventId] ?? const <int, Set<int>>{},
-                      slotSelections: _slotSelections,
-
-
-                  onUpdateSessionSelections: (map) {
-  // Translate legacy sessionIndex -> profiles into slotId -> profiles (source of truth)
-  final slots = _slotsOfEvent(full)..sort((a, b) => a.id.compareTo(b.id));
-
-  setState(() {
-    // 1) clear existing selections for THIS event
-    final eventSlotIds = slots.map((s) => s.id).toSet();
-    _slotSelections.removeWhere((slotId, _) => eventSlotIds.contains(slotId));
-
-    // 2) apply new selections based on sessionIndex -> slotId mapping
-    for (final entry in map.entries) {
-      final sessionIndex = entry.key;
-      if (sessionIndex < 0 || sessionIndex >= slots.length) continue;
-
-      final slotId = slots[sessionIndex].id;
-      final profSet = entry.value;
-      if (profSet.isEmpty) continue;
-
-      _slotSelections[slotId] = Set<int>.from(profSet);
-    }
-
-    // 3) rebuild selected events
-    _selectedEventIds
-      ..clear()
-      ..addAll(_eventIdsFromSlotSelections());
-  });
-
-  _saveSlotSelectionsToPrefs();
-},
-
-                ),
-              ),
-            );
-
-            // After returning, refresh slot selections (source of truth)
-            await _loadSlotSelectionsFromPrefs();
-          },
+      final full = await _loadEventWithSlots(e.id);
+      if (full == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Event not found')),
         );
-        break;
+        await _reloadEvents();
+        return;
+      }
+
+      final selIndexOK =
+          (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
+      final sel = selIndexOK
+          ? _profiles[e.profileIndex]
+          : (_profiles.isNotEmpty ? _profiles.first : null);
+
+      if (!context.mounted) return;
+
+      final eventId = full.id;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventDetailsPage(
+            event: full,
+            profile: sel,
+            profiles: _profiles,
+            sessionSelections:
+                sessionSelections[eventId] ?? const <int, Set<int>>{},
+            slotSelections: _slotSelections,
+
+            onUpdateSessionSelections: (slotMap) async {
+              debugPrint('🔥 SEARCH CALLBACK FIRED: $slotMap');
+
+              setState(() {
+                final slots = _slotsOfEvent(full);
+                final eventSlotIds = slots.map((s) => s.id).toSet();
+
+                // Clear old selections for this event
+                _slotSelections.removeWhere(
+                    (slotId, _) => eventSlotIds.contains(slotId));
+
+                // Apply new slot-level selections directly
+                for (final entry in slotMap.entries) {
+                  final slotId = entry.key;
+                  final profSet = entry.value;
+                  if (profSet.isNotEmpty) {
+                    _slotSelections[slotId] = Set<int>.from(profSet);
+                  }
+                }
+
+                _selectedEventIds
+                  ..clear()
+                  ..addAll(_eventIdsFromSlotSelections());
+              });
+
+              await _saveSlotSelectionsToPrefs();
+            },
+          ),
+        ),
+      );
+    },
+  );
+  break;
 
       default:
         page = _home();

@@ -22,14 +22,14 @@ const SavedStateSchema = CollectionSchema(
       name: r'favoriteEventIdsJson',
       type: IsarType.string,
     ),
-    r'sessionSelectionsJson': PropertySchema(
+    r'slotSelectionsJson': PropertySchema(
       id: 1,
-      name: r'sessionSelectionsJson',
+      name: r'slotSelectionsJson',
       type: IsarType.string,
     ),
-    r'slotSelectionsJson': PropertySchema(
+    r'userId': PropertySchema(
       id: 2,
-      name: r'slotSelectionsJson',
+      name: r'userId',
       type: IsarType.string,
     )
   },
@@ -38,7 +38,21 @@ const SavedStateSchema = CollectionSchema(
   deserialize: _savedStateDeserialize,
   deserializeProp: _savedStateDeserializeProp,
   idName: r'id',
-  indexes: {},
+  indexes: {
+    r'userId': IndexSchema(
+      id: -2005826577402374815,
+      name: r'userId',
+      unique: true,
+      replace: true,
+      properties: [
+        IndexPropertySchema(
+          name: r'userId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    )
+  },
   links: {},
   embeddedSchemas: {},
   getId: _savedStateGetId,
@@ -54,8 +68,8 @@ int _savedStateEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.favoriteEventIdsJson.length * 3;
-  bytesCount += 3 + object.sessionSelectionsJson.length * 3;
   bytesCount += 3 + object.slotSelectionsJson.length * 3;
+  bytesCount += 3 + object.userId.length * 3;
   return bytesCount;
 }
 
@@ -66,8 +80,8 @@ void _savedStateSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.favoriteEventIdsJson);
-  writer.writeString(offsets[1], object.sessionSelectionsJson);
-  writer.writeString(offsets[2], object.slotSelectionsJson);
+  writer.writeString(offsets[1], object.slotSelectionsJson);
+  writer.writeString(offsets[2], object.userId);
 }
 
 SavedState _savedStateDeserialize(
@@ -79,8 +93,8 @@ SavedState _savedStateDeserialize(
   final object = SavedState();
   object.favoriteEventIdsJson = reader.readString(offsets[0]);
   object.id = id;
-  object.sessionSelectionsJson = reader.readString(offsets[1]);
-  object.slotSelectionsJson = reader.readString(offsets[2]);
+  object.slotSelectionsJson = reader.readString(offsets[1]);
+  object.userId = reader.readString(offsets[2]);
   return object;
 }
 
@@ -112,6 +126,61 @@ List<IsarLinkBase<dynamic>> _savedStateGetLinks(SavedState object) {
 
 void _savedStateAttach(IsarCollection<dynamic> col, Id id, SavedState object) {
   object.id = id;
+}
+
+extension SavedStateByIndex on IsarCollection<SavedState> {
+  Future<SavedState?> getByUserId(String userId) {
+    return getByIndex(r'userId', [userId]);
+  }
+
+  SavedState? getByUserIdSync(String userId) {
+    return getByIndexSync(r'userId', [userId]);
+  }
+
+  Future<bool> deleteByUserId(String userId) {
+    return deleteByIndex(r'userId', [userId]);
+  }
+
+  bool deleteByUserIdSync(String userId) {
+    return deleteByIndexSync(r'userId', [userId]);
+  }
+
+  Future<List<SavedState?>> getAllByUserId(List<String> userIdValues) {
+    final values = userIdValues.map((e) => [e]).toList();
+    return getAllByIndex(r'userId', values);
+  }
+
+  List<SavedState?> getAllByUserIdSync(List<String> userIdValues) {
+    final values = userIdValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'userId', values);
+  }
+
+  Future<int> deleteAllByUserId(List<String> userIdValues) {
+    final values = userIdValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'userId', values);
+  }
+
+  int deleteAllByUserIdSync(List<String> userIdValues) {
+    final values = userIdValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'userId', values);
+  }
+
+  Future<Id> putByUserId(SavedState object) {
+    return putByIndex(r'userId', object);
+  }
+
+  Id putByUserIdSync(SavedState object, {bool saveLinks = true}) {
+    return putByIndexSync(r'userId', object, saveLinks: saveLinks);
+  }
+
+  Future<List<Id>> putAllByUserId(List<SavedState> objects) {
+    return putAllByIndex(r'userId', objects);
+  }
+
+  List<Id> putAllByUserIdSync(List<SavedState> objects,
+      {bool saveLinks = true}) {
+    return putAllByIndexSync(r'userId', objects, saveLinks: saveLinks);
+  }
 }
 
 extension SavedStateQueryWhereSort
@@ -187,6 +256,51 @@ extension SavedStateQueryWhere
         upper: upperId,
         includeUpper: includeUpper,
       ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterWhereClause> userIdEqualTo(
+      String userId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'userId',
+        value: [userId],
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterWhereClause> userIdNotEqualTo(
+      String userId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'userId',
+              lower: [],
+              upper: [userId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'userId',
+              lower: [userId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'userId',
+              lower: [userId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'userId',
+              lower: [],
+              upper: [userId],
+              includeUpper: false,
+            ));
+      }
     });
   }
 }
@@ -383,143 +497,6 @@ extension SavedStateQueryFilter
   }
 
   QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'sessionSelectionsJson',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'sessionSelectionsJson',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonLessThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'sessionSelectionsJson',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonBetween(
-    String lower,
-    String upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'sessionSelectionsJson',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'sessionSelectionsJson',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'sessionSelectionsJson',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonContains(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'sessionSelectionsJson',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonMatches(String pattern,
-          {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'sessionSelectionsJson',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'sessionSelectionsJson',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
-      sessionSelectionsJsonIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'sessionSelectionsJson',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
       slotSelectionsJsonEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -654,6 +631,137 @@ extension SavedStateQueryFilter
       ));
     });
   }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'userId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'userId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'userId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'userId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'userId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'userId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'userId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'userId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition> userIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'userId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterFilterCondition>
+      userIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'userId',
+        value: '',
+      ));
+    });
+  }
 }
 
 extension SavedStateQueryObject
@@ -679,20 +787,6 @@ extension SavedStateQuerySortBy
   }
 
   QueryBuilder<SavedState, SavedState, QAfterSortBy>
-      sortBySessionSelectionsJson() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'sessionSelectionsJson', Sort.asc);
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterSortBy>
-      sortBySessionSelectionsJsonDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'sessionSelectionsJson', Sort.desc);
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterSortBy>
       sortBySlotSelectionsJson() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'slotSelectionsJson', Sort.asc);
@@ -703,6 +797,18 @@ extension SavedStateQuerySortBy
       sortBySlotSelectionsJsonDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'slotSelectionsJson', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy> sortByUserId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy> sortByUserIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.desc);
     });
   }
 }
@@ -736,20 +842,6 @@ extension SavedStateQuerySortThenBy
   }
 
   QueryBuilder<SavedState, SavedState, QAfterSortBy>
-      thenBySessionSelectionsJson() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'sessionSelectionsJson', Sort.asc);
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterSortBy>
-      thenBySessionSelectionsJsonDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'sessionSelectionsJson', Sort.desc);
-    });
-  }
-
-  QueryBuilder<SavedState, SavedState, QAfterSortBy>
       thenBySlotSelectionsJson() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'slotSelectionsJson', Sort.asc);
@@ -760,6 +852,18 @@ extension SavedStateQuerySortThenBy
       thenBySlotSelectionsJsonDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'slotSelectionsJson', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy> thenByUserId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QAfterSortBy> thenByUserIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.desc);
     });
   }
 }
@@ -774,19 +878,18 @@ extension SavedStateQueryWhereDistinct
     });
   }
 
-  QueryBuilder<SavedState, SavedState, QDistinct>
-      distinctBySessionSelectionsJson({bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'sessionSelectionsJson',
-          caseSensitive: caseSensitive);
-    });
-  }
-
   QueryBuilder<SavedState, SavedState, QDistinct> distinctBySlotSelectionsJson(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'slotSelectionsJson',
           caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<SavedState, SavedState, QDistinct> distinctByUserId(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'userId', caseSensitive: caseSensitive);
     });
   }
 }
@@ -807,16 +910,15 @@ extension SavedStateQueryProperty
   }
 
   QueryBuilder<SavedState, String, QQueryOperations>
-      sessionSelectionsJsonProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'sessionSelectionsJson');
-    });
-  }
-
-  QueryBuilder<SavedState, String, QQueryOperations>
       slotSelectionsJsonProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'slotSelectionsJson');
+    });
+  }
+
+  QueryBuilder<SavedState, String, QQueryOperations> userIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'userId');
     });
   }
 }

@@ -70,46 +70,17 @@ final void Function(Map<int, Set<int>>)? onUpdateSessionSelections;
 class _EventDetailsPageState extends State<EventDetailsPage> {
   late Event _event;
 
-  /// sessionIndex -> set(profileIndex)  (OLD approach; we’ll phase this out)
-  Map<int, Set<int>> _sessionSelectedProfileIndexes = {};
 
   /// slotId -> set(profileIndex)  (NEW source of truth)
   Map<Id, Set<int>> _slotSelectedProfileIndexes = {};
 
 
-Map<int, Set<int>> _buildSessionSelectionsFromSlots() {
-  final out = <int, Set<int>>{};
-
-  // Group loaded slots by sessionIndex
-  final bySession = <int, List<EventSlot>>{};
-  for (final s in _event.slotIds) {
-    final key = s.sessionIndex ?? 0;
-    (bySession[key] ??= <EventSlot>[]).add(s);
-  }
-
-  // Union selected profiles across slots in each session
-  for (final entry in bySession.entries) {
-    final sessionKey = entry.key;
-    final slots = entry.value;
-
-    final union = <int>{};
-    for (final s in slots) {
-      final sid = s.id;
-      if (sid == 0) continue;
-      union.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
-    }
-
-    if (union.isNotEmpty) out[sessionKey] = union;
-  }
-
-  return out;
-}
 
 @override
 void initState() {
   super.initState();
   _event = widget.event;
-
+debugPrint('🔥 EVENT DETAILS INIT — callback is null? ${widget.onUpdateSessionSelections == null}');
   // ✅ Slot-level source of truth (hydrate immediately)
   _slotSelectedProfileIndexes = {
     for (final entry in widget.slotSelections.entries)
@@ -118,7 +89,7 @@ void initState() {
 
   // ✅ Session-level cache for immediate UI (checkboxes, labels, popup initial state)
   // Build from slots so it reflects ALL profiles already selected across slots.
-  _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
+
 }
 
 
@@ -299,7 +270,7 @@ void initState() {
   }
 
   // Build "Selected sessions" cards for this event,
-  // using the per-session selection state `_sessionSelectedProfileIndexes`.
+
   Widget _buildSelectedSessionCards(
     BuildContext context,
     List<EventSlot> slots,
@@ -425,16 +396,24 @@ final forLabel = selected.isEmpty
             // already on this event; no-op for now
           },
           onEditEvent: _editEvent,
-          onUnselect: () {
-            setState(() {
-              _sessionSelectedProfileIndexes[key] = <int>{};
-            });
-            if (widget.onUpdateSessionSelections != null) {
-              widget.onUpdateSessionSelections!(
-                Map<int, Set<int>>.from(_sessionSelectedProfileIndexes),
-              );
-            }
-          },
+onUnselect: () {
+  setState(() {
+    final sessionSlots = bySession[key] ?? const <EventSlot>[];
+
+    for (final s in sessionSlots) {
+      final sid = s.id;
+      if (sid != 0) {
+        _slotSelectedProfileIndexes.remove(sid);
+      }
+    }
+  });
+
+  if (widget.onUpdateSessionSelections != null) {
+    widget.onUpdateSessionSelections!(
+      Map<int, Set<int>>.from(_slotSelectedProfileIndexes),
+    );
+  }
+},
         ),
       );
     }
@@ -564,6 +543,8 @@ final forLabel = selected.isEmpty
     },
   );
 
+  debugPrint('🔥 BOTTOM SHEET RESULT: $result');
+
   if (result == null) return;
 
 // ✅ Write the same selected set to EACH slot in this session
@@ -575,10 +556,15 @@ setState(() {
     _slotSelectedProfileIndexes[sid] = Set<int>.from(mapped);
   }
 
-  _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
 });
 
+debugPrint('🔥 EVENT DETAILS SENDING UP: $_slotSelectedProfileIndexes');
 
+if (widget.onUpdateSessionSelections != null) {
+  widget.onUpdateSessionSelections!(
+    Map<int, Set<int>>.from(_slotSelectedProfileIndexes),
+  );
+}
 }
 
 
@@ -757,7 +743,6 @@ setState(() {
                         // make sure we have a selection set for each sessionIndex
                         // Keep session UI map in sync with slot source-of-truth.
 // (Don't seed empty sets here — it can mask updates.)
-_sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
 
                         // ---------- helpers for labels ----------
                         String daysLabel(List<EventSlot> list) {
@@ -881,16 +866,20 @@ _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
                                 final cost = costLabel(list);
                                 final level = levelLabelLocal(list);
 
-                                final selected =
-                                    _sessionSelectedProfileIndexes[
-                                            key] ??
-                                        <int>{};
-                                final selectedLabel = selected.isEmpty
-                                    ? ''
-                                    : 'For: ' +
-                                        selected
-                                            .map(_profileLabel)
-                                            .join(', ');
+                                final selected = <int>{};
+for (final s in bySession[key] ?? const <EventSlot>[]) {
+  final sid = s.id;
+  if (sid != 0) {
+    selected.addAll(
+      _slotSelectedProfileIndexes[sid] ?? const <int>{},
+    );
+  }
+}
+
+final selectedLabel = selected.isEmpty
+    ? ''
+    : 'For: ' +
+        selected.map(_profileLabel).join(', ');
 
                                 items.add(
                                   Container(
@@ -1041,15 +1030,20 @@ _sessionSelectedProfileIndexes = _buildSessionSelectionsFromSlots();
                               final cost = costLabel(list);
                               final level = levelLabelLocal(list);
 
-                              final selected =
-                                  _sessionSelectedProfileIndexes[key] ??
-                                      <int>{};
-                              final selectedLabel = selected.isEmpty
-                                  ? ''
-                                  : 'For: ' +
-                                      selected
-                                          .map(_profileLabel)
-                                          .join(', ');
+                              final selected = <int>{};
+for (final s in bySession[key] ?? const <EventSlot>[]) {
+  final sid = s.id;
+  if (sid != 0) {
+    selected.addAll(
+      _slotSelectedProfileIndexes[sid] ?? const <int>{},
+    );
+  }
+}
+
+final selectedLabel = selected.isEmpty
+    ? ''
+    : 'For: ' +
+        selected.map(_profileLabel).join(', ');
 
                               rows.add(
                                 Column(

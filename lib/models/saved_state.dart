@@ -4,13 +4,13 @@ part 'saved_state.g.dart';
 
 @collection
 class SavedState {
-  Id id = 0; // singleton row (always 0)
+  Id id = Isar.autoIncrement; // unique row per user
+
+  @Index(unique: true, replace: true)
+  late String userId;
 
   String favoriteEventIdsJson = '[]';
 
   /// Source of truth: slotId -> profileIndexes
   String slotSelectionsJson = '{}';
-
-  /// Legacy (can be removed later after full migration)
-  String sessionSelectionsJson = '{}';
 }

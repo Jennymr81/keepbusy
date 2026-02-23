@@ -184,9 +184,7 @@ class _SavedPageState extends State<SavedPage> {
       final selectionsForEvent = widget.sessionSelectionsByEvent[id];
       if (selectionsForEvent == null || selectionsForEvent.isEmpty) continue;
 
-      // IMPORTANT:
-      // sessionIndex is derived in HomePage as the index in a stable ordering by slotId.
-      // SavedPage must use the SAME ordering, otherwise sessionIndex will point to the wrong slot.
+
       final slots = ev.slotIds.toList()..sort((a, b) => a.id.compareTo(b.id));
       if (slots.isEmpty) continue;
 
@@ -199,9 +197,6 @@ class _SavedPageState extends State<SavedPage> {
         final sessionIndex = entry.key;
         final profileIdxs = entry.value;
         if (profileIdxs.isEmpty) continue;
-
-        if (sessionIndex < 0 || sessionIndex >= slots.length) continue;
-
 
         // FILTER by selected profile (if any)
         if (_selectedProfileIndex >= 0 &&

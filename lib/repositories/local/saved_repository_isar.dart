@@ -6,27 +6,37 @@ import 'package:isar/isar.dart';
 import '../../data/db.dart';
 import '../../models/saved_state.dart';
 
+
 class SavedRepositoryIsar {
   SavedRepositoryIsar._();
 
-  static const Id _singletonId = 0;
+  static Future<SavedState> _getOrCreate(
+    Isar isar,
+    String userId,
+  ) async {
+    final existing = await isar.savedStates
+        .where()
+        .userIdEqualTo(userId)
+        .findFirst();
 
-  static Future<SavedState> _getOrCreate(Isar isar) async {
-    final existing = await isar.collection<SavedState>().get(_singletonId);
     if (existing != null) return existing;
 
-    final created = SavedState()..id = _singletonId; // ✅ explicit singleton id
-    await isar.collection<SavedState>().put(created);
+    final created = SavedState()..userId = userId;
+    await isar.savedStates.put(created);
     return created;
   }
 
-  /// Loads favorites + slot selections (source of truth).
+  /// Loads favorites + slot selections for a specific user.
   static Future<({
     Set<int> favoriteEventIds,
     Map<int, Set<int>> slotSelections,
-  })> load() async {
+  })> load(String userId) async {
     final isar = await getIsar();
-    final row = await isar.collection<SavedState>().get(_singletonId);
+
+    final row = await isar.savedStates
+        .where()
+        .userIdEqualTo(userId)
+        .findFirst();
 
     if (row == null) {
       return (
@@ -62,8 +72,9 @@ class SavedRepositoryIsar {
     return (favoriteEventIds: favList, slotSelections: result);
   }
 
-  /// Saves favorites + slot selections (source of truth).
+  /// Saves favorites + slot selections for a specific user.
   static Future<void> save({
+    required String userId,
     required Set<int> favoriteEventIds,
     required Map<int, Set<int>> slotSelections,
   }) async {
@@ -79,15 +90,16 @@ class SavedRepositoryIsar {
     final selJson = jsonEncode(out);
 
     await isar.writeTxn(() async {
-      final row = await _getOrCreate(isar);
+      final row = await _getOrCreate(isar, userId);
       row.favoriteEventIdsJson = favJson;
       row.slotSelectionsJson = selJson;
-      await isar.collection<SavedState>().put(row);
+      await isar.savedStates.put(row);
     });
   }
 
-  static Future<void> clear() async {
+  static Future<void> clear(String userId) async {
     await save(
+      userId: userId,
       favoriteEventIds: <int>{},
       slotSelections: <int, Set<int>>{},
     );
