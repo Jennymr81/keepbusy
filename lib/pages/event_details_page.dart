@@ -52,14 +52,9 @@ class EventDetailsPage extends StatefulWidget {
   final Profile? profile; // nullable
   final List<Profile> profiles;
 
-/// slotId -> set of profile indexes (derived, UI-only)
-final Map<Id, Set<int>> sessionSelections;
-
-/// slotId -> set of profile indexes (SOURCE OF TRUTH)
-final Map<Id, Set<int>> slotSelections;
-
-/// Notify parent after slot-level updates
-final void Function(Map<int, Set<int>>)? onUpdateSessionSelections;
+final Map<Id, Set<Id>> sessionSelections;
+final Map<Id, Set<Id>> slotSelections;
+final void Function(Map<Id, Set<Id>>)? onUpdateSessionSelections;
 
 
 
@@ -72,7 +67,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
 
 
   /// slotId -> set(profileIndex)  (NEW source of truth)
-  Map<Id, Set<int>> _slotSelectedProfileIndexes = {};
+  Map<Id, Set<Id>> _slotSelectedProfileIds = {};
 
 
 
@@ -82,10 +77,10 @@ void initState() {
   _event = widget.event;
 debugPrint('🔥 EVENT DETAILS INIT — callback is null? ${widget.onUpdateSessionSelections == null}');
   // ✅ Slot-level source of truth (hydrate immediately)
-  _slotSelectedProfileIndexes = {
-    for (final entry in widget.slotSelections.entries)
-      entry.key: Set<int>.from(entry.value),
-  };
+  _slotSelectedProfileIds = {
+  for (final entry in widget.slotSelections.entries)
+    entry.key: Set<Id>.from(entry.value),
+};
 
   // ✅ Session-level cache for immediate UI (checkboxes, labels, popup initial state)
   // Build from slots so it reflects ALL profiles already selected across slots.
@@ -95,11 +90,9 @@ debugPrint('🔥 EVENT DETAILS INIT — callback is null? ${widget.onUpdateSessi
 
 
   /// Pretty label for a profile index (nickname > full name > fallback).
-  String _profileLabel(int index) {
-    if (index < 0 || index >= widget.profiles.length) {
-      return 'Profile ${index + 1}';
-    }
-    final p = widget.profiles[index];
+  String _profileLabel(Id profileId) {
+  try {
+    final p = widget.profiles.firstWhere((x) => x.id == profileId);
 
     final nick = (p.nickname ?? '').trim();
     if (nick.isNotEmpty) return nick;
@@ -109,8 +102,11 @@ debugPrint('🔥 EVENT DETAILS INIT — callback is null? ${widget.onUpdateSessi
     final full = [first, last].where((s) => s.isNotEmpty).join(' ');
     if (full.isNotEmpty) return full;
 
-    return 'Profile ${index + 1}';
+    return 'Profile ${p.id}';
+  } catch (_) {
+    return 'Profile $profileId';
   }
+}
 
     /// Canonical identifier for a profile *within this page*.
   /// 
@@ -360,7 +356,7 @@ final selected = <int>{};
 for (final s in list) {
   final sid = s.id;
   if (sid == 0) continue;
-  selected.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
+  selected.addAll(_slotSelectedProfileIds[sid] ?? const <int>{});
 }
 
 final forLabel = selected.isEmpty
@@ -403,14 +399,15 @@ onUnselect: () {
     for (final s in sessionSlots) {
       final sid = s.id;
       if (sid != 0) {
-        _slotSelectedProfileIndexes.remove(sid);
+        _slotSelectedProfileIds.remove(sid);
       }
     }
   });
 
   if (widget.onUpdateSessionSelections != null) {
     widget.onUpdateSessionSelections!(
-      Map<int, Set<int>>.from(_slotSelectedProfileIndexes),
+  Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
+
     );
   }
 },
@@ -459,14 +456,14 @@ onUnselect: () {
   // ✅ Current selection = UNION across all slots in this session
   final current = <int>{};
   for (final sid in slotIds) {
-    current.addAll(_slotSelectedProfileIndexes[sid] ?? const <int>{});
+    current.addAll(_slotSelectedProfileIds[sid] ?? const <int>{});
   }
 
-  final result = await showModalBottomSheet<Set<int>>(
+  final result = await showModalBottomSheet<Set<Id>>(
     context: context,
     isScrollControlled: true,
     builder: (ctx) {
-      Set<int> temp = Set<int>.from(current);
+      Set<Id> temp = Set<Id>.from(current);
 
       return SafeArea(
         child: Padding(
@@ -491,32 +488,37 @@ onUnselect: () {
                     child: ListView.builder(
                       itemCount: widget.profiles.length,
                       itemBuilder: (ctx, i) {
-                        final checked = temp.contains(i);
-                        final p = widget.profiles[i];
+  final p = widget.profiles[i];
+  final profileId = p.id;
 
-                        final nickname = (p.nickname ?? '').trim();
-                        final fullName =
-                            '${p.firstName ?? ''} ${p.lastName ?? ''}'.trim();
-                        final label = nickname.isNotEmpty
-                            ? nickname
-                            : (fullName.isNotEmpty
-                                ? fullName
-                                : 'Profile ${i + 1}');
+  final checked = temp.contains(profileId);
 
-                        return CheckboxListTile(
-                          value: checked,
-                          title: Text(label),
-                          onChanged: (val) {
-                            setSB(() {
-                              if (val == true) {
-                                temp.add(i);
-                              } else {
-                                temp.remove(i);
-                              }
-                            });
-                          },
-                        );
-                      },
+  final nickname = (p.nickname ?? '').trim();
+  final fullName =
+      '${p.firstName ?? ''} ${p.lastName ?? ''}'.trim();
+
+  final label = nickname.isNotEmpty
+      ? nickname
+      : (fullName.isNotEmpty
+          ? fullName
+          : 'Profile ${i + 1}');
+
+  return CheckboxListTile(
+    value: checked,
+    title: Text(label),
+    onChanged: (val) {
+  setSB(() {
+    final updated = Set<Id>.from(temp);
+    if (val == true) {
+      updated.add(profileId);
+    } else {
+      updated.remove(profileId);
+    }
+    temp = updated;
+  });
+},
+  );
+}
                     ),
                   ),
 
@@ -550,20 +552,18 @@ onUnselect: () {
 // ✅ Write the same selected set to EACH slot in this session
 // ✅ Then rebuild the FULL session map from slot selections (source of truth)
 setState(() {
-  final mapped = result.map(_profileKey).toSet();
-
   for (final sid in slotIds) {
-    _slotSelectedProfileIndexes[sid] = Set<int>.from(mapped);
-  }
+  _slotSelectedProfileIds[sid] = Set<Id>.from(result);
+}
 
 });
 
-debugPrint('🔥 EVENT DETAILS SENDING UP: $_slotSelectedProfileIndexes');
+debugPrint('🔥 EVENT DETAILS SENDING UP: $_slotSelectedProfileIds');
 
 if (widget.onUpdateSessionSelections != null) {
   widget.onUpdateSessionSelections!(
-    Map<int, Set<int>>.from(_slotSelectedProfileIndexes),
-  );
+  Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
+);
 }
 }
 
@@ -871,7 +871,7 @@ for (final s in bySession[key] ?? const <EventSlot>[]) {
   final sid = s.id;
   if (sid != 0) {
     selected.addAll(
-      _slotSelectedProfileIndexes[sid] ?? const <int>{},
+      _slotSelectedProfileIds[sid] ?? const <int>{},
     );
   }
 }
@@ -1035,7 +1035,7 @@ for (final s in bySession[key] ?? const <EventSlot>[]) {
   final sid = s.id;
   if (sid != 0) {
     selected.addAll(
-      _slotSelectedProfileIndexes[sid] ?? const <int>{},
+      _slotSelectedProfileIds[sid] ?? const <int>{},
     );
   }
 }

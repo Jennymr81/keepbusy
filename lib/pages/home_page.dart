@@ -10,6 +10,7 @@ import 'package:isar/isar.dart';
 import '../data/db.dart';
 import '../models/event_models.dart';
 import 'package:keepbusy/repositories/local/saved_repository_isar.dart';
+import 'package:keepbusy/repositories/local/dev_auth_repository.dart';
 import '../utils/file_utils.dart';
 import '../utils/profile_label.dart';
 import '../widgets/image_helpers.dart';
@@ -60,33 +61,40 @@ class _KeepBusyHomePageState extends State<KeepBusyHomePage> {
   List<Event> _events = [];
 
 // 🔐 Simulated logged-in user
-String _currentUserId = 'user_002';
+
+final DevAuthRepository _authRepository = DevAuthRepository();
+
+
 // 🔄 Dev-only fake users
 final List<String> _devUsers = [
+  'admin',  
   'user_001',
   'user_002',
   'user_003',
 ];
 
+final SavedRepositoryIsar _savedRepository = SavedRepositoryIsar();
+
   // in-memory favorites / selected (by event Id)
   final Set<Id> _favoriteEventIds = <Id>{};
   final Set<Id> _selectedEventIds = <Id>{};
 
-// ✅ Source of truth (persisted per user):
-// userId -> (slotId -> set of profile indexes into _profiles)
-final Map<String, Map<int, Set<int>>> _userSlotSelections = {};
+final Map<String, Map<int, Set<Id>>> _userSlotSelections = {};
 
-// Always work against the current user's selections
-Map<int, Set<int>> get _slotSelections {
-  return _userSlotSelections[_currentUserId] ??= <int, Set<int>>{};
+Map<int, Set<Id>> get _slotSelections {
+  final userId = _authRepository.currentUserId;
+  if (userId == null) {
+    return <int, Set<Id>>{};
+  }
+
+  return _userSlotSelections[userId] ??= <int, Set<Id>>{};
 }
 
-
- Map<Id, Map<int, Set<int>>> get sessionSelections {
-  final out = <Id, Map<int, Set<int>>>{};
+ Map<Id, Map<int, Set<Id>>> get sessionSelections {
+  final out = <Id, Map<int, Set<Id>>>{};
 
   for (final ev in _events) {
-    final bySession = <int, Set<int>>{};
+    final bySession = <int, Set<Id>>{};
 
     for (final slot in ev.slotIds) {
       final slotId = slot.id;
@@ -96,7 +104,7 @@ Map<int, Set<int>> get _slotSelections {
       if (profSet == null || profSet.isEmpty) continue;
 
       final sessionKey = slot.sessionIndex ?? 0;
-      (bySession[sessionKey] ??= <int>{}).addAll(profSet);
+      (bySession[sessionKey] ??= <Id>{}).addAll(profSet);
     }
 
     if (bySession.isNotEmpty) {
@@ -155,9 +163,12 @@ bool _searchSelectedOnly = false;
   return out;
 }
 
+
   Future<void> _loadSlotSelectionsFromPrefs() async {
     try {
-      final loaded = await SavedRepositoryIsar.load(_currentUserId);
+      final userId = _authRepository.currentUserId!;
+final loaded = await _savedRepository.load(userId);
+      
 
       if (!mounted) return;
       setState(() {
@@ -169,7 +180,7 @@ bool _searchSelectedOnly = false;
           ..clear()
           ..addAll(
             loaded.slotSelections.map(
-              (slotId, profSet) => MapEntry(slotId, Set<int>.from(profSet)),
+              (slotId, profSet) => MapEntry(slotId, Set<Id>.from(profSet)),
             ),
           );
 
@@ -183,13 +194,14 @@ bool _searchSelectedOnly = false;
     }
   }
 
+
 Future<void> _saveSlotSelectionsToPrefs() async {
   try {
-    await SavedRepositoryIsar.save(
-      userId: _currentUserId, // ✅ NEW
+    await _savedRepository.save(
+  userId: _authRepository.currentUserId!,
       favoriteEventIds: _favoriteEventIds.map((e) => e.toInt()).toSet(),
       slotSelections: _slotSelections.map(
-        (slotId, profSet) => MapEntry(slotId, Set<int>.from(profSet)),
+        (slotId, profSet) => MapEntry(slotId, Set<Id>.from(profSet)),
       ),
     );
   } catch (e, st) {
@@ -199,11 +211,13 @@ Future<void> _saveSlotSelectionsToPrefs() async {
 }
 
 Future<void> _switchUser(String userId) async {
-  if (userId == _currentUserId) return;
+  final current = _authRepository.currentUserId;
 
-  setState(() {
-    _currentUserId = userId;
-  });
+  if (userId == current) return;
+
+  await _authRepository.signIn(userId);
+
+  if (!mounted) return;
 
   await _loadSlotSelectionsFromPrefs();
 
@@ -323,11 +337,12 @@ void initState() {
   _initDb(); // ✅ fine as-is
 }
 
-
 Future<void> _initDb() async {
-  await ProfilesRepositoryIsar.init();
-  final profiles = await ProfilesRepositoryIsar.loadProfiles();
+  if (_authRepository.currentUserId == null) {
+    await _authRepository.signIn(_devUsers.first);
+  }
 
+  final profiles = await ProfilesRepositoryIsar.loadProfiles();
   if (!mounted) return;
   setState(() => _profiles = profiles);
 
@@ -422,8 +437,8 @@ Future<void> _initDb() async {
   /// SessionIndex is defined as the index of the slot in a stable ordering (by slotId).
   /// If you later want "sessionIndex" to mean something else (e.g. group by date/time),
   /// we can change the ordering/grouping here without touching persistence.
-  Map<int, Map<int, Set<int>>> _derivedSessionSelectionsByEvent() {
-    final out = <int, Map<int, Set<int>>>{};
+  Map<int, Map<int, Set<Id>>> _derivedSessionSelectionsByEvent() {
+    final out = <int, Map<int, Set<Id>>>{};
 
     for (final ev in _events) {
       final slots = _slotsOfEvent(ev);
@@ -432,14 +447,14 @@ Future<void> _initDb() async {
       // Stable ordering; avoid relying on unknown slot fields.
       slots.sort((a, b) => a.id.compareTo(b.id));
 
-      final sessions = <int, Set<int>>{};
+      final sessions = <int, Set<Id>>{};
       for (var i = 0; i < slots.length; i++) {
         final slotId = slots[i].id;
         final profSet = _slotSelections[slotId];
         if (profSet == null || profSet.isEmpty) continue;
 
         // sessionIndex == i (slot's index in sorted list)
-        sessions[i] = Set<int>.from(profSet);
+        sessions[i] = Set<Id>.from(profSet);
       }
 
       if (sessions.isNotEmpty) out[ev.id] = sessions;
@@ -632,11 +647,10 @@ Widget page;
             profile: sel,
             profiles: _profiles,
             sessionSelections:
-                sessionSelectionsByEvent[eventId] ?? const <int, Set<int>>{},
+                sessionSelectionsByEvent[eventId] ?? const <int, Set<Id>>{},
             slotSelections: _slotSelections,
 
             onUpdateSessionSelections: (slotMap) async {
-              debugPrint('🔥 SAVED CALLBACK FIRED: $slotMap');
 
               setState(() {
                 final slots = _slotsOfEvent(full);
@@ -651,7 +665,7 @@ Widget page;
                   final slotId = entry.key;
                   final profSet = entry.value;
                   if (profSet.isNotEmpty) {
-                    _slotSelections[slotId] = Set<int>.from(profSet);
+                    _slotSelections[slotId] = Set<Id>.from(profSet);
                   }
                 }
 
@@ -742,11 +756,10 @@ Widget page;
             profile: sel,
             profiles: _profiles,
             sessionSelections:
-                sessionSelections[eventId] ?? const <int, Set<int>>{},
+                sessionSelections[eventId] ?? const <int, Set<Id>>{},
             slotSelections: _slotSelections,
 
             onUpdateSessionSelections: (slotMap) async {
-              debugPrint('🔥 SEARCH CALLBACK FIRED: $slotMap');
 
               setState(() {
                 final slots = _slotsOfEvent(full);
@@ -761,7 +774,7 @@ Widget page;
                   final slotId = entry.key;
                   final profSet = entry.value;
                   if (profSet.isNotEmpty) {
-                    _slotSelections[slotId] = Set<int>.from(profSet);
+                    _slotSelections[slotId] = Set<Id>.from(profSet);
                   }
                 }
 
@@ -791,36 +804,37 @@ Widget page;
 final appBar = AppBar(
   title: const Text('KeepBusy'),
   actions: [
+  if (_authRepository.currentUserRole == 'admin')
     IconButton(
       icon: const Icon(Icons.download),
       tooltip: 'Export events to CSV',
       onPressed: _exportEventsToCsv,
     ),
 
-    // 🔄 DEV ONLY — temporary user switcher
-    Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: DropdownButton<String>(
-        value: _currentUserId,
-        underline: const SizedBox(),
-        icon: const Icon(Icons.person, color: Colors.white),
-        dropdownColor: Colors.white,
-        onChanged: (value) {
-          if (value != null) {
-            _switchUser(value);
-          }
-        },
-        items: _devUsers
-            .map(
-              (user) => DropdownMenuItem<String>(
-                value: user,
-                child: Text(user),
-              ),
-            )
-            .toList(),
-      ),
+  // 🔄 DEV ONLY — temporary user switcher
+  Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    child: DropdownButton<String>(
+      value: _authRepository.currentUserId,
+      underline: const SizedBox(),
+      icon: const Icon(Icons.person, color: Colors.white),
+      dropdownColor: Colors.white,
+      onChanged: (value) {
+        if (value != null) {
+          _switchUser(value);
+        }
+      },
+      items: _devUsers
+          .map(
+            (user) => DropdownMenuItem<String>(
+              value: user,
+              child: Text(user),
+            ),
+          )
+          .toList(),
     ),
-  ],
+  ),
+],
 );
 
         if (wide) {
@@ -1090,7 +1104,7 @@ Positioned(
   );
 
   /// Week preview pips for the HOME page.
-  ///
+  ///2/26/26 NEED TO REVIEW THESE NOTES. DON'T THINK THEY APPLY ANYMORE.
   /// IMPORTANT: _sessionSelections is Map<Id, Map<int, Set<int>>>
   /// which means: event -> sessionIndex -> set(profileIndex).
   /// It does NOT contain dates, so we place pips on TODAY for now.
@@ -1144,11 +1158,16 @@ Positioned(
     final names = <String>{};
     if (perSession != null) {
       for (final set in perSession.values) {
-        for (final pi in set) {
-          if (pi >= 0 && pi < _profiles.length) {
-            names.add(profileLabel(_profiles[pi]));
-          }
-        }
+        for (final profileId in set) {
+  final profile = _profiles
+      .where((p) => p.id == profileId)
+      .cast<Profile?>()
+      .firstOrNull;
+
+  if (profile != null) {
+    names.add(profileLabel(profile));
+  }
+}
       }
     }
 

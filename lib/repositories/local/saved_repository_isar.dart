@@ -6,9 +6,12 @@ import 'package:isar/isar.dart';
 import '../../data/db.dart';
 import '../../models/saved_state.dart';
 
+import '../saved_repository.dart';
 
-class SavedRepositoryIsar {
-  SavedRepositoryIsar._();
+
+
+class SavedRepositoryIsar implements SavedRepository {
+  SavedRepositoryIsar();
 
   static Future<SavedState> _getOrCreate(
     Isar isar,
@@ -27,10 +30,10 @@ class SavedRepositoryIsar {
   }
 
   /// Loads favorites + slot selections for a specific user.
-  static Future<({
-    Set<int> favoriteEventIds,
-    Map<int, Set<int>> slotSelections,
-  })> load(String userId) async {
+ Future<({
+  Set<int> favoriteEventIds,
+  Map<int, Set<Id>> slotSelections,
+})> load(String userId) async {
     final isar = await getIsar();
 
     final row = await isar.savedStates
@@ -51,14 +54,14 @@ class SavedRepositoryIsar {
         .toSet();
 
     final decoded = jsonDecode(row.slotSelectionsJson);
-    final result = <int, Set<int>>{};
+    final result = <int, Set<Id>>{};
 
     if (decoded is Map<String, dynamic>) {
       decoded.forEach((slotIdStr, profListAny) {
         final slotId = int.tryParse(slotIdStr);
         if (slotId == null) return;
 
-        final profSet = <int>{};
+        final profSet = <Id>{};
         if (profListAny is List) {
           for (final v in profListAny) {
             if (v is num) profSet.add(v.toInt());
@@ -73,11 +76,11 @@ class SavedRepositoryIsar {
   }
 
   /// Saves favorites + slot selections for a specific user.
-  static Future<void> save({
-    required String userId,
-    required Set<int> favoriteEventIds,
-    required Map<int, Set<int>> slotSelections,
-  }) async {
+Future<void> save({
+  required String userId,
+  required Set<int> favoriteEventIds,
+  required Map<int, Set<Id>> slotSelections,
+}) async {
     final isar = await getIsar();
 
     final Map<String, List<int>> out = {};
@@ -97,7 +100,7 @@ class SavedRepositoryIsar {
     });
   }
 
-  static Future<void> clear(String userId) async {
+  Future<void> clear(String userId) async {
     await save(
       userId: userId,
       favoriteEventIds: <int>{},

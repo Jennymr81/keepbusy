@@ -37,7 +37,7 @@ class SavedPage extends StatefulWidget {
   final List<Event> events;
 
   /// eventId -> (sessionIndex -> set of profile indexes into [profiles])
-  final Map<Id, Map<int, Set<int>>> sessionSelectionsByEvent;
+  final Map<Id, Map<int, Set<Id>>> sessionSelectionsByEvent;
 
   final void Function(Event e) onOpenEvent;
 
@@ -84,11 +84,9 @@ class _SavedPageState extends State<SavedPage> {
     return null;
   }
 
-  String _profileLabel(int index) {
-    if (index < 0 || index >= widget.profiles.length) {
-      return 'Profile ${index + 1}';
-    }
-    final p = widget.profiles[index];
+  String _profileLabel(Id profileId) {
+  try {
+    final p = widget.profiles.firstWhere((x) => x.id == profileId);
 
     final nick = (p.nickname ?? '').trim();
     if (nick.isNotEmpty) return nick;
@@ -98,8 +96,11 @@ class _SavedPageState extends State<SavedPage> {
     final full = [first, last].where((s) => s.isNotEmpty).join(' ');
     if (full.isNotEmpty) return full;
 
-    return 'Profile ${index + 1}';
+    return 'Profile ${p.id}';
+  } catch (_) {
+    return 'Profile $profileId';
   }
+}
 
   // Helpers that mirror the EventDetails page logic
   String _daysLabel(List<EventSlot> list) {
@@ -174,87 +175,89 @@ class _SavedPageState extends State<SavedPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Build a flat list of “selected session” view models
-    final List<_SavedSessionView> selectedSessions = [];
+    final Map<Id, List<_SavedSessionView>> groupedSessions = {};
 
-    for (final ev in widget.events) {
-      final id = ev.id;
-      if (id == null) continue;
+for (final ev in widget.events) {
+  final id = ev.id;
+  if (id == null) continue;
 
-      final selectionsForEvent = widget.sessionSelectionsByEvent[id];
-      if (selectionsForEvent == null || selectionsForEvent.isEmpty) continue;
+  final selectionsForEvent = widget.sessionSelectionsByEvent[id];
+  if (selectionsForEvent == null || selectionsForEvent.isEmpty) continue;
 
+  final slots = ev.slotIds.toList()
+    ..sort((a, b) => a.id.compareTo(b.id));
+  if (slots.isEmpty) continue;
 
-      final slots = ev.slotIds.toList()..sort((a, b) => a.id.compareTo(b.id));
-      if (slots.isEmpty) continue;
+  final imageSrc = (ev.imagePath?.trim().isNotEmpty == true)
+      ? ev.imagePath!.trim()
+      : (_firstImageLink(ev) ?? 'assets/soccer_camp.jpg');
 
+  for (final entry in selectionsForEvent.entries) {
+    final sessionIndex = entry.key;
+    final profileIdxs = entry.value;
+    if (profileIdxs.isEmpty) continue;
 
-      final imageSrc = (ev.imagePath?.trim().isNotEmpty == true)
-          ? ev.imagePath!.trim()
-          : (_firstImageLink(ev) ?? 'assets/soccer_camp.jpg');
-
-      for (final entry in selectionsForEvent.entries) {
-        final sessionIndex = entry.key;
-        final profileIdxs = entry.value;
-        if (profileIdxs.isEmpty) continue;
-
-        // FILTER by selected profile (if any)
-        if (_selectedProfileIndex >= 0 &&
-            !profileIdxs.contains(_selectedProfileIndex)) {
-          continue;
-        }
-
-        // Slots for this session index
-        final sessionSlots = slots
-            .where((s) => (s.sessionIndex ?? 0) == sessionIndex)
-            .toList();
-        if (sessionSlots.isEmpty) continue;
-
-        final first = sessionSlots.first.date;
-        final last = sessionSlots.last.date;
-
-        final days = _daysLabel(sessionSlots);
-        final time = _timeLabel(context, sessionSlots);
-        final weeks = _computeWeeks(sessionSlots);
-        final ages = _agesLabel(sessionSlots);
-        final cost = _costLabel(sessionSlots);
-        final level = _levelLabel(sessionSlots);
-
-        // Location + dates in one line
-        final loc = (ev.locationName ?? '').trim();
-        final dayDate = [
-          if (loc.isNotEmpty) loc,
-          '$days • ${_md(first)} – ${_md(last)}',
-        ].join(' • ');
-
-        final metaParts = <String>[];
-        if (ages.isNotEmpty) metaParts.add('Ages: $ages');
-        if (level.isNotEmpty) metaParts.add(level);
-        if (weeks > 0) metaParts.add('$weeks weeks');
-        if (cost.isNotEmpty) metaParts.add(cost);
-        final meta = metaParts.join(' • ');
-
-        final forLabel =
-            'For: ' + profileIdxs.map(_profileLabel).join(', ');
-
-        selectedSessions.add(
-          _SavedSessionView(
-            event: ev,
-            eventId: id,
-            sessionIndex: sessionIndex,
-            eventTitle: ev.title,
-            sessionLabel: 'Session ${sessionIndex + 1}',
-            dayDateLabel: dayDate,
-            timeLabel: time,
-            metaLabel: meta,
-            forProfilesLabel: forLabel,
-            imageSrc: imageSrc,
-            profileIndexes: Set<int>.from(profileIdxs),
-          ),
-        );
-      }
+    if (_selectedProfileIndex >= 0 &&
+        !profileIdxs.contains(_selectedProfileIndex)) {
+      continue;
     }
 
+    final sessionSlots = slots
+        .where((s) => (s.sessionIndex ?? 0) == sessionIndex)
+        .toList();
+    if (sessionSlots.isEmpty) continue;
+
+    final first = sessionSlots.first.date;
+    final last = sessionSlots.last.date;
+
+    final days = _daysLabel(sessionSlots);
+    final time = _timeLabel(context, sessionSlots);
+    final weeks = _computeWeeks(sessionSlots);
+    final ages = _agesLabel(sessionSlots);
+    final cost = _costLabel(sessionSlots);
+    final level = _levelLabel(sessionSlots);
+
+    final loc = (ev.locationName ?? '').trim();
+    final dayDate = [
+      if (loc.isNotEmpty) loc,
+      '$days • ${_md(first)} – ${_md(last)}',
+    ].join(' • ');
+
+    final metaParts = <String>[];
+    if (ages.isNotEmpty) metaParts.add('Ages: $ages');
+    if (level.isNotEmpty) metaParts.add(level);
+    if (weeks > 0) metaParts.add('$weeks weeks');
+    if (cost.isNotEmpty) metaParts.add(cost);
+    final meta = metaParts.join(' • ');
+
+    debugPrint('--- SESSION DEBUG ---');
+debugPrint('SessionIndex: $sessionIndex');
+debugPrint('Profile indexes: $profileIdxs');
+
+for (final idx in profileIdxs) {
+  debugPrint('Index $idx maps to profile: ${_profileLabel(idx)}');
+}
+
+final forLabel =
+    'For: ' + profileIdxs.map(_profileLabel).join(', ');
+
+    final sessionView = _SavedSessionView(
+      event: ev,
+      eventId: id,
+      sessionIndex: sessionIndex,
+      eventTitle: ev.title,
+      sessionLabel: 'Session ${sessionIndex + 1}',
+      dayDateLabel: dayDate,
+      timeLabel: time,
+      metaLabel: meta,
+      forProfilesLabel: forLabel,
+      imageSrc: imageSrc,
+      profileIds: Set<Id>.from(profileIdxs),
+    );
+
+    groupedSessions.putIfAbsent(id, () => []).add(sessionView);
+  }
+}
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
@@ -314,65 +317,127 @@ class _SavedPageState extends State<SavedPage> {
 
             // Yellow selected-session cards
             Expanded(
-              child: selectedSessions.isEmpty
-                  ? Center(
-                      child: Text(
-                        _selectedProfileIndex == -1
-                            ? 'No selected sessions yet.\n\nOpen an event and assign a session to a profile to see it here.'
-                            : 'No selected sessions for ${_profileLabel(_selectedProfileIndex)} yet.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge,
+  child: groupedSessions.isEmpty
+      ? Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.bookmark_border,
+                  size: 64,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withOpacity(.6),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _selectedProfileIndex == -1
+                      ? 'No saved sessions yet'
+                      : 'No saved sessions for ${_profileLabel(_selectedProfileIndex)}',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Open an event and assign a session to a profile to see it here.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        )
+      : ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: groupedSessions.entries.map((entry) {
+            final eventSessions = entry.value;
+            final eventTitle = eventSessions.first.eventTitle;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 🔹 Event Section Header
+                Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 6),
+      child: Text(
+        eventTitle,
+        style: Theme.of(context)
+            .textTheme
+            .titleLarge
+            ?.copyWith(fontWeight: FontWeight.w800),
+      ),
+    ),
+    Divider(
+      thickness: 1,
+      height: 16,
+      color: Colors.black.withOpacity(.08),
+    ),
+  ],
+),
+
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final w = c.maxWidth;
+
+                    int cols;
+                    if (w >= 1200) {
+                      cols = 4;
+                    } else if (w >= 900) {
+                      cols = 3;
+                    } else if (w >= 600) {
+                      cols = 2;
+                    } else {
+                      cols = 1;
+                    }
+
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        childAspectRatio: 3 / 4,
                       ),
-                    )
-                  : LayoutBuilder(
-                      builder: (context, c) {
-                        final w = c.maxWidth;
-
-                        int cols;
-                        if (w >= 1200) {
-                          cols = 4;
-                        } else if (w >= 900) {
-                          cols = 3;
-                        } else if (w >= 600) {
-                          cols = 2;
-                        } else {
-                          cols = 1;
-                        }
-
-                        return GridView.builder(
-                          padding:
-                              const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: cols,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                            childAspectRatio: 3 / 4,
-                          ),
-                          itemCount: selectedSessions.length,
-                          itemBuilder: (context, i) {
-                            final m = selectedSessions[i];
-                            return SelectedSessionCard(
-                              eventTitle: m.eventTitle,
-                              sessionLabel: m.sessionLabel,
-                              dayDateLabel: m.dayDateLabel,
-                              timeLabel: m.timeLabel,
-                              metaLabel: m.metaLabel,
-                              forProfilesLabel: m.forProfilesLabel,
-                              imageSrc: m.imageSrc,
-                              onOpenEvent: () =>
-                                  widget.onOpenEvent(m.event),
-                              onEditEvent: null,
-                              onUnselect: widget.onUnselectSession == null
+                      itemCount: eventSessions.length,
+                      itemBuilder: (context, i) {
+                        final m = eventSessions[i];
+                        return SelectedSessionCard(
+                          eventTitle: '',
+                          sessionLabel: m.sessionLabel,
+                          dayDateLabel: m.dayDateLabel,
+                          timeLabel: m.timeLabel,
+                          metaLabel: m.metaLabel,
+                          forProfilesLabel: m.forProfilesLabel,
+                          imageSrc: m.imageSrc,
+                          onOpenEvent: () =>
+                              widget.onOpenEvent(m.event),
+                          onEditEvent: null,
+                          onUnselect:
+                              widget.onUnselectSession == null
                                   ? null
                                   : () => widget.onUnselectSession!(
-                                      m.eventId, m.sessionIndex),
-                            );
-                          },
+                                      m.eventId,
+                                      m.sessionIndex),
                         );
                       },
-                    ),
-            ),
+                    );
+                  },
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+),
           ],
         ),
       ),
@@ -433,7 +498,7 @@ class _SavedSessionView {
     required this.event,
     required this.eventId,
     required this.sessionIndex,
-    required this.profileIndexes,
+    required this.profileIds,
     required this.eventTitle,
     required this.sessionLabel,
     required this.dayDateLabel,
@@ -446,7 +511,7 @@ class _SavedSessionView {
   final Event event;
   final Id eventId;
   final int sessionIndex;
-  final Set<int> profileIndexes;
+  final Set<Id> profileIds;
 
   final String eventTitle;
   final String sessionLabel;
@@ -510,18 +575,19 @@ class SelectedSessionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final provider = _imageProvider(imageSrc);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7D9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    return _HoverCard(
+  child: Container(
+    margin: const EdgeInsets.symmetric(vertical: 6),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF7D9),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.black.withOpacity(.06)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
           // IMAGE ACROSS TOP
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
@@ -635,6 +701,43 @@ class SelectedSessionCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+  ),
+    );
+
+  }
+}
+class _HoverCard extends StatefulWidget {
+  const _HoverCard({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HoverCard> createState() => _HoverCardState();
+}
+
+class _HoverCardState extends State<_HoverCard> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+  BoxShadow(
+    color: Colors.black.withOpacity(_hovering ? 0.10 : 0.04),
+    blurRadius: _hovering ? 16 : 8,
+    offset: const Offset(0, 4),
+  ),
+],
+        ),
+        child: widget.child,
       ),
     );
   }
