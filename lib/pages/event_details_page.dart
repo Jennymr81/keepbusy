@@ -75,7 +75,6 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
 void initState() {
   super.initState();
   _event = widget.event;
-debugPrint('🔥 EVENT DETAILS INIT — callback is null? ${widget.onUpdateSessionSelections == null}');
   // ✅ Slot-level source of truth (hydrate immediately)
   _slotSelectedProfileIds = {
   for (final entry in widget.slotSelections.entries)
@@ -193,11 +192,61 @@ debugPrint('🔥 EVENT DETAILS INIT — callback is null? ${widget.onUpdateSessi
     final newSlots =
         (result['slots'] as List<EventSlot>? ?? const <EventSlot>[]);
 
+// Check if this event currently has saved selections
+bool hasSavedSelections = false;
+
+for (final old in _event.slotIds) {
+  final oldId = old.id;
+  if (oldId != null && _slotSelectedProfileIds.containsKey(oldId)) {
+    hasSavedSelections = true;
+    break;
+  }
+}
+
+if (hasSavedSelections) {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Update Event?'),
+      content: const Text(
+        'Editing this event will remove saved session selections for this event.\n\nDo you want to continue?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Continue'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) {
+    return; // Abort update
+  }
+}
+
     final isar = await getIsar();
     await isar.writeTxn(() async {
       // keep same id when editing
       if (_event.id != null) updated.id = _event.id!;
 
+// Clear saved selections for old slots
+for (final old in _event.slotIds) {
+  final oldId = old.id;
+  if (oldId != null) {
+    _slotSelectedProfileIds.remove(oldId);
+  }
+}
+
+if (widget.onUpdateSessionSelections != null) {
+  widget.onUpdateSessionSelections!(
+    Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
+  );
+}
       // remove old slots
       await _event.slotIds.load();
       for (final old in _event.slotIds) {
@@ -382,7 +431,7 @@ final forLabel = selected.isEmpty
       cards.add(
         SelectedSessionCard(
           eventTitle: _event.title,
-          sessionLabel: 'Session ${displayIndex + 1}',
+          sessionLabel: 'Session ${key + 1}',
           dayDateLabel: '$days • ${_md(first)} – ${_md(last)}',
           timeLabel: time,
           metaLabel: metaLabel,
@@ -905,9 +954,9 @@ final selectedLabel = selected.isEmpty
                                                 size: 18),
                                             const SizedBox(width: 6),
                                             Text(
-                                              'Session ${displayIndex + 1}',
-                                              style: headerStyle,
-                                            ),
+  'Session ${key + 1}',
+  style: headerStyle,
+),
                                             const SizedBox(width: 8),
                                             IconButton(
                                               padding: EdgeInsets.zero,
@@ -1068,9 +1117,9 @@ final selectedLabel = selected.isEmpty
                                                 const SizedBox(
                                                     width: 6),
                                                 Text(
-                                                  'Session ${displayIndex + 1}',
-                                                  style: headerStyle,
-                                                ),
+  'Session ${key + 1}',
+  style: headerStyle,
+),
                                                 const SizedBox(
                                                     width: 4),
                                                 IconButton(
