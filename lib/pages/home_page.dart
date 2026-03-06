@@ -22,6 +22,7 @@ import 'event_entry_form_page.dart';
 import 'profiles_page.dart';
 import 'saved_page.dart';
 import 'search_page.dart';
+import 'package:keepbusy/models/user_role.dart';
 
 // Profiles
 import '../models/profile.dart';
@@ -804,7 +805,7 @@ Widget page;
 final appBar = AppBar(
   title: const Text('KeepBusy'),
   actions: [
-  if (_authRepository.currentUserRole == 'admin')
+  if (_authRepository.currentUserRole == UserRole.admin)
     IconButton(
       icon: const Icon(Icons.download),
       tooltip: 'Export events to CSV',

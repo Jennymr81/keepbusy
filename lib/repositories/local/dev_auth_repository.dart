@@ -1,27 +1,26 @@
 
 import '../auth_repository.dart';
+import '../../models/user_role.dart';
 
 class DevAuthRepository implements AuthRepository {
   String? _currentUserId;
-  String? _currentUserRole;
+  UserRole? _currentUserRole;
 
   @override
   String? get currentUserId => _currentUserId;
 
   @override
-  String? get currentUserRole => _currentUserRole;
+UserRole? get currentUserRole => _currentUserRole;
 
   @override
   Future<void> signIn(String userId) async {
     _currentUserId = userId;
 
-    // 🔐 Simple DEV role logic
-    // You can customize this mapping
-    if (userId == 'admin') {
-      _currentUserRole = 'admin';
-    } else {
-      _currentUserRole = 'user';
-    }
+   if (userId == 'admin') {
+  _currentUserRole = UserRole.admin;
+} else {
+  _currentUserRole = UserRole.user;
+}
   }
 
   @override

@@ -1,8 +1,10 @@
+import '../models/user_role.dart';
+
 abstract class AuthRepository {
   String? get currentUserId;
 
   /// NEW — user role (admin or user)
-  String? get currentUserRole;
+  UserRole? get currentUserRole;
 
   Future<void> signIn(String userId);
 

@@ -175,6 +175,8 @@ class _SavedPageState extends State<SavedPage> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('SavedPage rebuild');
+
     final List<_SavedSessionView> savedSessions = [];
 
 for (final ev in widget.events) {
@@ -356,9 +358,11 @@ savedSessions.sort((a, b) {
           children: [
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 1000;
+                const minCardWidth = 540.0; // safe width for horizontal card
+final canUseTwoCols =
+    constraints.maxWidth >= (minCardWidth * 2 + 24);
 
-                if (!isWide) {
+                if (!canUseTwoCols) {
                   return Column(
                     children: savedSessions.map((m) {
                       return Padding(
@@ -560,7 +564,7 @@ Widget build(BuildContext context) {
 
   return LayoutBuilder(
     builder: (context, constraints) {
-      final isWide = constraints.maxWidth >= 600;
+      final canUseTwoCols = constraints.maxWidth >= 600;
 
       return _HoverCard(
         child: Container(
@@ -570,7 +574,7 @@ Widget build(BuildContext context) {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.black.withOpacity(.05)),
           ),
-          child: isWide
+          child: canUseTwoCols
     ? IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
