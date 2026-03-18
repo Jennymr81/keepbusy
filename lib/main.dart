@@ -12,6 +12,7 @@ Future<void> main() async {
   // This opens Isar via db.dart (through ProfileService)
 await ProfilesRepositoryIsar.init();
 
+
   runApp(const KeepBusyApp());
 }
 

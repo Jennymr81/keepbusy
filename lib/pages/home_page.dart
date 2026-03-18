@@ -335,7 +335,12 @@ void _toggleSelectedEvent(Event e, bool isSelected) {
 @override
 void initState() {
   super.initState();
-  _initDb(); // ✅ fine as-is
+  _initializeApp();
+}
+
+Future<void> _initializeApp() async {
+  await _authRepository.restoreSession();
+  await _initDb();
 }
 
 Future<void> _initDb() async {

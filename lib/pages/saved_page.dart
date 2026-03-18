@@ -175,7 +175,6 @@ class _SavedPageState extends State<SavedPage> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('SavedPage rebuild');
 
     final List<_SavedSessionView> savedSessions = [];
 
