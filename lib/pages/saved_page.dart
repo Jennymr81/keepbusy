@@ -62,6 +62,7 @@ class _SavedPageState extends State<SavedPage> {
   /// -1 = All profiles; otherwise index into widget.profiles
   int _selectedProfileIndex = -1;
   _SortOption _currentSort = _SortOption.date;
+  bool _showAllProfiles = false;
 
   // Pick the best image URL/path for this event (same logic as before)
   String? _firstImageLink(Event ev) {
@@ -268,7 +269,18 @@ final forLabel =
 }
 
 savedSessions.sort((a, b) {
-  return a.firstDate.compareTo(b.firstDate);
+  switch (_currentSort) {
+    case _SortOption.date:
+      return a.firstDate.compareTo(b.firstDate);
+
+    case _SortOption.title:
+      return a.eventTitle.toLowerCase().compareTo(
+            b.eventTitle.toLowerCase(),
+          );
+
+    case _SortOption.recent:
+      return b.firstDate.compareTo(a.firstDate);
+  }
 });
 
     return SafeArea(
@@ -293,40 +305,193 @@ savedSessions.sort((a, b) {
                     ),
               ),
             ),
-            const SizedBox(height: 12),
+    const SizedBox(height: 12),
+LayoutBuilder(
+  builder: (context, constraints) {
+    final isNarrow = constraints.maxWidth < 1000;
 
-            // PROFILE FILTER ROW – ALWAYS SHOW ALL PROFILES
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _ProfileFilterChip(
-                    label: 'All profiles',
-                    selected: _selectedProfileIndex == -1,
+    if (isNarrow) {
+  final visibleEntries = _showAllProfiles
+      ? widget.profiles.asMap().entries
+      : widget.profiles.asMap().entries.take(5);
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+                _ProfileFilterChip(
+                  label: 'All',
+                  selected: _selectedProfileIndex == -1,
+                  onTap: () {
+                    setState(() {
+                      _selectedProfileIndex = -1;
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+
+                for (final entry in visibleEntries) ...[
+                  Builder(
+                    builder: (context) {
+                      final i = entry.key;
+final p = entry.value;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _ProfileFilterChip(
+                          label: _profileLabel(p.id),
+                          profile: p,
+                          selected: _selectedProfileIndex == i,
+                          onTap: () {
+                            setState(() {
+                              _selectedProfileIndex = i;
+                            });
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+
+              const SizedBox(height: 8),
+
+            if (widget.profiles.length > 6)
+  Padding(
+    padding: const EdgeInsets.only(top: 6),
+    child: GestureDetector(
+      onTap: () {
+        setState(() {
+          _showAllProfiles = !_showAllProfiles;
+        });
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _showAllProfiles ? 'Show less' : 'Show more',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            _showAllProfiles
+                ? Icons.expand_less
+                : Icons.expand_more,
+            size: 18,
+          ),
+        ],
+      ),
+    ),
+  ),
+
+          const SizedBox(height: 12),
+
+          ToggleButtons(
+            isSelected: [
+              _currentSort == _SortOption.date,
+              _currentSort == _SortOption.title,
+            ],
+            onPressed: (index) {
+              setState(() {
+                _currentSort =
+                    index == 0 ? _SortOption.date : _SortOption.title;
+              });
+            },
+            borderRadius: BorderRadius.circular(10),
+            children: const [
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text('Date'),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text('Title'),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // WIDE layout (desktop)
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _ProfileFilterChip(
+            label: 'All',
+            selected: _selectedProfileIndex == -1,
+            onTap: () {
+              setState(() {
+                _selectedProfileIndex = -1;
+              });
+            },
+          ),
+          const SizedBox(width: 8),
+
+          for (int i = 0; i < widget.profiles.length; i++) ...[
+            Builder(
+              builder: (context) {
+                final p = widget.profiles[i];
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _ProfileFilterChip(
+                    label: _profileLabel(p.id),
+                    profile: p,
+                    selected: _selectedProfileIndex == i,
                     onTap: () {
                       setState(() {
-                        _selectedProfileIndex = -1;
+                        _selectedProfileIndex = i;
                       });
                     },
                   ),
-                  const SizedBox(width: 8),
-                  for (int i = 0; i < widget.profiles.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _ProfileFilterChip(
-                        label: _profileLabel(i),
-                        selected: _selectedProfileIndex == i,
-                        onTap: () {
-                          setState(() {
-                            _selectedProfileIndex = i;
-                          });
-                        },
-                      ),
-                    ),
-                ],
-              ),
+                );
+              },
             ),
-            const SizedBox(height: 12),
+          ],
+
+          const SizedBox(width: 16),
+
+          ToggleButtons(
+            isSelected: [
+              _currentSort == _SortOption.date,
+              _currentSort == _SortOption.title,
+            ],
+            onPressed: (index) {
+              setState(() {
+                _currentSort =
+                    index == 0 ? _SortOption.date : _SortOption.title;
+              });
+            },
+            borderRadius: BorderRadius.circular(10),
+            children: const [
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text('Date'),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text('Title'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  },
+),
+
+const SizedBox(height: 12),
+
+const SizedBox(height: 12),
 
             // Yellow selected-session cards
             Expanded(
@@ -626,15 +791,32 @@ class _ProfileFilterChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.profile,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final Profile? profile;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
+    ImageProvider? avatar;
+
+    if (profile?.asset != null && profile!.asset!.isNotEmpty) {
+      final path = profile!.asset!;
+
+      if (path.startsWith('http')) {
+        avatar = NetworkImage(path);
+      } else if (path.startsWith('assets/')) {
+        avatar = AssetImage(path);
+      } else {
+        avatar = FileImage(File(path));
+      }
+    }
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -650,14 +832,27 @@ class _ProfileFilterChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (profile != null) ...[
+              CircleAvatar(
+                radius: 10,
+                backgroundImage: avatar,
+                child: avatar == null
+                    ? const Icon(Icons.person, size: 12)
+                    : null,
+              ),
+              const SizedBox(width: 6),
+            ],
+
             if (selected) ...[
               Icon(Icons.check, size: 16, color: cs.primary),
               const SizedBox(width: 4),
             ],
+
             Text(
               label,
               style: TextStyle(
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                fontWeight:
+                    selected ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
           ],
