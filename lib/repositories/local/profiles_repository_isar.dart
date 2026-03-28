@@ -12,7 +12,6 @@ class ProfilesRepositoryIsar {
 
   static Future<void> init() async {
     _isar ??= await getIsar();
-    debugPrint('KEEPBUSY(DB): ProfilesRepositoryIsar ready');
   }
 
   static Future<List<Profile>> loadProfiles() async {

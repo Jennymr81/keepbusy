@@ -29,7 +29,8 @@ class CalendarPage extends StatefulWidget {
     required this.onOpenProfile,
     required this.onAddEvent,
     required this.sessionSelections,
-    required this.slotSelections, 
+    required this.slotSelections,
+    this.isAdmin = false,
   });
 
   final List<Profile> profiles;
@@ -38,8 +39,9 @@ class CalendarPage extends StatefulWidget {
   final void Function(Profile profile) onOpenProfile;
   final VoidCallback onAddEvent;
 
-  final Map<Id, Map<int, Set<int>>> sessionSelections;
-  final Map<int, Set<int>> slotSelections;
+ final Map<Id, Map<int, Set<Id>>> sessionSelections;
+final Map<Id, Set<Id>> slotSelections;
+  final bool isAdmin;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -412,6 +414,7 @@ Future<void> _openDayQuickView(DateTime day) async {
   event: it.event,
   profile: widget.profiles[safeIndex],
   profiles: widget.profiles,
+  isAdmin: widget.isAdmin,
 
   // derived (for UI)
   sessionSelections:
@@ -893,6 +896,7 @@ final extraCount = visibleItems.length - shown.length;
       event: it.event,
       profile: profile,
       profiles: widget.profiles,
+      isAdmin: widget.isAdmin,
 
       // derived (UI only)
       sessionSelections:

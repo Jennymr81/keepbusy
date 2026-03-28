@@ -142,7 +142,7 @@ class _MultiDatePickerPageState extends State<_MultiDatePickerPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+Widget build(BuildContext context) {
     final base = _selected.isNotEmpty ? _selected.first : DateTime.now();
     final firstMonth = _addMonths(_mStart(base), -1); // one before
     final lastMonth = _addMonths(firstMonth, 13);     // and 13 after
@@ -203,9 +203,17 @@ class _MultiDatePickerPageState extends State<_MultiDatePickerPage> {
 // Event Entry Form (Create/Edit canonical)
 // ==============================
 class EventEntryFormPage extends StatefulWidget {
-  const EventEntryFormPage({super.key, required this.profiles, this.existing});
+  const EventEntryFormPage({
+    super.key,
+    required this.profiles,
+    this.existing,
+    this.isAdmin = false,
+  });
+
   final List<Profile> profiles;
   final Event? existing;
+
+  final bool isAdmin; // ✅ ADD
 
   @override
   State<EventEntryFormPage> createState() => _EventEntryFormPageState();
@@ -759,7 +767,16 @@ double? _pickedLng;
 
   // ---- save ----
   void _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+  // 🔒 LOGIC GUARD — block non-admins even if UI fails
+  if (!widget.isAdmin) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Admin access required')),
+    );
+    return;
+  }
+
+  if (!(_formKey.currentState?.validate() ?? false)) return;
 
     // Strict checks for links
     for (final c in _linkCtrls) {
@@ -889,7 +906,16 @@ double? _pickedLng;
   }
 
   Future<void> _confirmDelete() async {
-    if (!mounted) return;
+
+  // 🔒 LOGIC GUARD — block non-admins even if UI fails
+  if (!widget.isAdmin) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Admin access required')),
+    );
+    return;
+  }
+
+  if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -988,11 +1014,25 @@ _pickedLng = e.locationLng;
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    final isNarrow = MediaQuery.of(context).size.width < 520;
+ @override
+Widget build(BuildContext context) {
+
+  // 🔒 AUTH GUARD — block non-admin access
+  if (!widget.isAdmin) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Access Restricted')),
+      body: Center(
+        child: Text(
+          'Admin access required',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+      ),
+    );
+  }
+
+  final t = Theme.of(context);
+  final cs = t.colorScheme;
+  final isNarrow = MediaQuery.of(context).size.width < 520;
 
     return Scaffold(
       appBar: AppBar(

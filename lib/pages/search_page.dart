@@ -89,6 +89,7 @@ class SimpleSearchPage extends StatefulWidget {
   final List<Event> events;
 
   final Map<int, Set<int>> slotSelections;
+final bool isAdmin;
 
   // ✅ NEW
   final String initialQuery;
@@ -104,11 +105,13 @@ class SimpleSearchPage extends StatefulWidget {
     required this.onOpenEvent,
     required this.loadById,
     required this.slotSelections,
+    this.isAdmin = false,
     this.favoriteEventIds,
     this.selectedEventIds,
     this.onToggleFavorite,
     this.onToggleSelected,
     this.onEventDeleted,
+    
 
     // ✅ NEW
     this.initialQuery = '',
@@ -980,7 +983,30 @@ if (needsLocation && _me == null && !_locLoading) {
 }
 
     final filtered = _events.where((e) {
+// 🔒 Expiration filter — hide fully expired events
+{
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
 
+  bool hasFutureSession = false;
+
+  try {
+    for (final s in e.slotIds) {
+      final slotDay = DateTime(
+        s.date.year,
+        s.date.month,
+        s.date.day,
+      );
+
+      if (!slotDay.isBefore(today)) {
+        hasFutureSession = true;
+        break;
+      }
+    }
+  } catch (_) {}
+
+  if (!hasFutureSession) return false;
+}
 // Radius filter (requires both user + event coordinates)
 if (radiusMiles != null) {
   final evLat = e.locationLat;
@@ -1572,15 +1598,17 @@ LayoutBuilder(
                             : (_firstImageLink(ev) ??
                                 'assets/soccer_camp.jpg'),
                         onView: () => widget.onOpenEvent(ev),
-                        onEdit: () async {
+                        onEdit: widget.isAdmin
+                        ? () async {
                           final result =
                               await Navigator.push<Map<String, dynamic>?>(
                             context,
                             MaterialPageRoute(
                               builder: (_) => EventEntryFormPage(
-                                profiles: widget.profiles,
-                                existing: e,
-                              ),
+  profiles: widget.profiles,
+  existing: ev,
+  isAdmin: widget.isAdmin,
+),
                             ),
                           );
 
@@ -1685,11 +1713,13 @@ if (result['delete'] == true) {
                             const SnackBar(
                                 content: Text('Event updated')),
                           );
-                        },
+                        }
+                        : null,
                       );
                     },
                   );
                 }
+                
 
                 // ---------- Layout: list for most widths, 2-col grid for very wide ----------
                 if (w < 1200) {

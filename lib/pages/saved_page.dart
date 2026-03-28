@@ -31,26 +31,37 @@ class SavedPage extends StatefulWidget {
     required this.sessionSelectionsByEvent,
     required this.onOpenEvent,
     this.onUnselectSession,
+    this.onBrowseEvents,
+    this.isAdmin = false,
   });
 
   final List<Profile> profiles;
   final List<Event> events;
 
-/// eventId -> (sessionIndex -> set of profile IDs)
   final Map<Id, Map<int, Set<Id>>> sessionSelectionsByEvent;
 
   final void Function(Event e) onOpenEvent;
 
-  /// Called when the user unselects a session from a yellow card
   final void Function(Id eventId, int sessionIndex)? onUnselectSession;
+
+  final VoidCallback? onBrowseEvents;
+
+  final bool isAdmin; // ✅ ADD THIS
 
   @override
   State<SavedPage> createState() => _SavedPageState();
 }
 
+enum _SortOption {
+  date,
+  title,
+  recent,
+}
+
 class _SavedPageState extends State<SavedPage> {
   /// -1 = All profiles; otherwise index into widget.profiles
   int _selectedProfileIndex = -1;
+  _SortOption _currentSort = _SortOption.date;
 
   // Pick the best image URL/path for this event (same logic as before)
   String? _firstImageLink(Event ev) {
@@ -208,9 +219,10 @@ for (final ev in widget.events) {
         .toList();
     if (sessionSlots.isEmpty) continue;
 
+sessionSlots.sort((a, b) => a.date.compareTo(b.date));
+
     final first = sessionSlots.first.date;
     final last = sessionSlots.last.date;
-
     final days = _daysLabel(sessionSlots);
     final time = _timeLabel(context, sessionSlots);
     final weeks = _computeWeeks(sessionSlots);
@@ -240,6 +252,7 @@ final forLabel =
   eventId: id,
   sessionIndex: sessionIndex,
   firstDate: first,
+  lastDate: last,
   eventTitle: ev.title,
   sessionLabel: 'Session ${sessionIndex + 1}',
   dayDateLabel: dayDate,
@@ -319,104 +332,281 @@ savedSessions.sort((a, b) {
             Expanded(
   child: savedSessions.isEmpty
       ? Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.bookmark_border,
-                  size: 64,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withOpacity(.6),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _selectedProfileIndex == -1
-                      ? 'No saved sessions yet'
-                      : 'No saved sessions for ${_profileLabel(_selectedProfileIndex)}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Open an event and assign a session to a profile to see it here.',
-                  textAlign: TextAlign.center,
-                ),
-              ],
+  child: Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 32,
+          vertical: 44,
+        ),
+        decoration: BoxDecoration(
+  color: Theme.of(context)
+      .colorScheme
+      .surfaceVariant
+      .withOpacity(.20),
+  borderRadius: BorderRadius.circular(24),
+  border: Border.all(
+    color: Theme.of(context)
+        .colorScheme
+        .outlineVariant
+        .withOpacity(.4),
+  ),
+),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+  Icons.bookmark_border,
+  size: 60,
+  color: Theme.of(context)
+      .colorScheme
+      .primary
+      .withOpacity(.65),
+),
+            const SizedBox(height: 20),
+
+            // 🔹 Title
+            Text(
+              _selectedProfileIndex == -1
+                  ? 'No saved sessions yet'
+                  : 'No saved sessions for ${_profileLabel(_selectedProfileIndex)}',
+              textAlign: TextAlign.center,
+             style: Theme.of(context)
+    .textTheme
+    .headlineSmall
+    ?.copyWith(
+      fontWeight: FontWeight.w800,
+      letterSpacing: .2,
+    ),
             ),
-          ),
-        )
+
+            const SizedBox(height: 14),
+
+            // 🔹 Helper text (softer + clearer)
+            Text(
+              'Browse events and save sessions to quickly access them here.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant,
+                  ),
+            ),
+
+            const SizedBox(height: 32),
+
+            // 🔹 CTA
+            ElevatedButton(
+              onPressed: () {
+                if (widget.onBrowseEvents != null) {
+                  widget.onBrowseEvents!();
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 14,
+                ),
+              ),
+              child: const Text('Browse Events'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  ),
+)
       : ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             LayoutBuilder(
               builder: (context, constraints) {
+                final now = DateTime.now();
+
+final activeSessions = <_SavedSessionView>[];
+final pastSessions = <_SavedSessionView>[];
+
+for (final m in savedSessions) {
+  if (m.lastDate.isBefore(now)) {
+    pastSessions.add(m);
+  } else {
+    activeSessions.add(m);
+  }
+}
                 const minCardWidth = 540.0; // safe width for horizontal card
 final canUseTwoCols =
     constraints.maxWidth >= (minCardWidth * 2 + 24);
 
                 if (!canUseTwoCols) {
-                  return Column(
-                    children: savedSessions.map((m) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: SelectedSessionCard(
-                          eventTitle: m.eventTitle,
-                          sessionLabel: m.sessionLabel,
-                          dayDateLabel: m.dayDateLabel,
-                          timeLabel: m.timeLabel,
-                          metaLabel: m.metaLabel,
-                          forProfilesLabel: m.forProfilesLabel,
-                          imageSrc: m.imageSrc,
-                          onOpenEvent: () =>
-                              widget.onOpenEvent(m.event),
-                          onEditEvent: null,
-                          onUnselect: widget.onUnselectSession == null
-                              ? null
-                              : () => widget.onUnselectSession!(
-                                    m.eventId,
-                                    m.sessionIndex,
-                                  ),
-                        ),
-                      );
-                    }).toList(),
-                  );
-                }
+  return Column(
+    children: [
+      ...activeSessions.map((m) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: SelectedSessionCard(
+            eventTitle: m.eventTitle,
+            sessionLabel: m.sessionLabel,
+            dayDateLabel: m.dayDateLabel,
+            timeLabel: m.timeLabel,
+            metaLabel: m.metaLabel,
+            forProfilesLabel: m.forProfilesLabel,
+            imageSrc: m.imageSrc,
+            onOpenEvent: () =>
+                widget.onOpenEvent(m.event),
+            onEditEvent: null,
+            onUnselect: widget.onUnselectSession == null
+                ? null
+                : () => widget.onUnselectSession!(
+                      m.eventId,
+                      m.sessionIndex,
+                    ),
+          ),
+        );
+      }),
 
-                return Wrap(
-                  spacing: 24,
-                  runSpacing: 24,
-                  children: savedSessions.map((m) {
-                    return SizedBox(
-                      width: (constraints.maxWidth - 24) / 2,
-                      child: SelectedSessionCard(
-                        eventTitle: m.eventTitle,
-                        sessionLabel: m.sessionLabel,
-                        dayDateLabel: m.dayDateLabel,
-                        timeLabel: m.timeLabel,
-                        metaLabel: m.metaLabel,
-                        forProfilesLabel: m.forProfilesLabel,
-                        imageSrc: m.imageSrc,
-                        onOpenEvent: () =>
-                            widget.onOpenEvent(m.event),
-                        onEditEvent: null,
-                        onUnselect:
-                            widget.onUnselectSession == null
-                                ? null
-                                : () => widget.onUnselectSession!(
-                                      m.eventId,
-                                      m.sessionIndex,
-                                    ),
-                      ),
-                    );
-                  }).toList(),
-                );
+      if (pastSessions.isNotEmpty) ...[
+        const SizedBox(height: 32),
+        ExpansionTile(
+          title: Text(
+            'Past Sessions (${pastSessions.length})',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          children: [
+            for (final m in pastSessions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SelectedSessionCard(
+                  eventTitle: m.eventTitle,
+                  sessionLabel: m.sessionLabel,
+                  dayDateLabel: m.dayDateLabel,
+                  timeLabel: m.timeLabel,
+                  metaLabel: m.metaLabel,
+                  forProfilesLabel: m.forProfilesLabel,
+                  imageSrc: m.imageSrc,
+                  onOpenEvent: () =>
+                      widget.onOpenEvent(m.event),
+                  onEditEvent: null,
+                  onUnselect:
+                      widget.onUnselectSession == null
+                          ? null
+                          : () => widget.onUnselectSession!(
+                                m.eventId,
+                                m.sessionIndex,
+                              ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    ],
+  );
+}
+
+                return Column(
+  children: [
+    for (int i = 0; i < activeSessions.length; i += 2)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: SelectedSessionCard(
+                eventTitle: activeSessions[i].eventTitle,
+                sessionLabel: activeSessions[i].sessionLabel,
+                dayDateLabel: activeSessions[i].dayDateLabel,
+                timeLabel: activeSessions[i].timeLabel,
+                metaLabel: activeSessions[i].metaLabel,
+                forProfilesLabel: activeSessions[i].forProfilesLabel,
+                imageSrc: activeSessions[i].imageSrc,
+                onOpenEvent: () =>
+                    widget.onOpenEvent(activeSessions[i].event),
+                onEditEvent: null,
+                onUnselect:
+                    widget.onUnselectSession == null
+                        ? null
+                        : () => widget.onUnselectSession!(
+                              activeSessions[i].eventId,
+                              activeSessions[i].sessionIndex,
+                            ),
+              ),
+            ),
+            const SizedBox(width: 24),
+            if (i + 1 < activeSessions.length)
+              Expanded(
+                child: SelectedSessionCard(
+                  eventTitle: activeSessions[i + 1].eventTitle,
+                  sessionLabel: activeSessions[i + 1].sessionLabel,
+                  dayDateLabel: activeSessions[i + 1].dayDateLabel,
+                  timeLabel: activeSessions[i + 1].timeLabel,
+                  metaLabel: activeSessions[i + 1].metaLabel,
+                  forProfilesLabel:
+                      activeSessions[i + 1].forProfilesLabel,
+                  imageSrc: activeSessions[i + 1].imageSrc,
+                  onOpenEvent: () =>
+                      widget.onOpenEvent(activeSessions[i + 1].event),
+                  onEditEvent: null,
+                  onUnselect:
+                      widget.onUnselectSession == null
+                          ? null
+                          : () => widget.onUnselectSession!(
+                                activeSessions[i + 1].eventId,
+                                activeSessions[i + 1].sessionIndex,
+                              ),
+                ),
+              )
+            else
+              const Spacer(),
+          ],
+        ),
+      ),
+       if (pastSessions.isNotEmpty) ...[
+      const SizedBox(height: 32),
+      ExpansionTile(
+        title: Text(
+          'Past Sessions (${pastSessions.length})',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        children: [
+          for (final m in pastSessions)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: SelectedSessionCard(
+                eventTitle: m.eventTitle,
+                sessionLabel: m.sessionLabel,
+                dayDateLabel: m.dayDateLabel,
+                timeLabel: m.timeLabel,
+                metaLabel: m.metaLabel,
+                forProfilesLabel: m.forProfilesLabel,
+                imageSrc: m.imageSrc,
+                onOpenEvent: () =>
+                    widget.onOpenEvent(m.event),
+                onEditEvent: null,
+                onUnselect:
+                    widget.onUnselectSession == null
+                        ? null
+                        : () => widget.onUnselectSession!(
+                              m.eventId,
+                              m.sessionIndex,
+                            ),
+              ),
+            ),
+        ],
+      ),
+    ],
+  ],
+);
               },
             ),
           ],
@@ -428,6 +618,7 @@ final canUseTwoCols =
     );
   }
 }
+
 
 // Simple “chip” used in the profile filter row
 class _ProfileFilterChip extends StatelessWidget {
@@ -491,6 +682,7 @@ class _SavedSessionView {
     required this.forProfilesLabel,
     required this.imageSrc,
     required this.firstDate,
+    required this.lastDate,
   });
 
   final Event event;
@@ -506,6 +698,7 @@ class _SavedSessionView {
   final String forProfilesLabel;
   final String imageSrc;
   final DateTime firstDate;
+  final DateTime lastDate;
 }
 
 // ===============================
@@ -563,9 +756,12 @@ Widget build(BuildContext context) {
 
   return LayoutBuilder(
     builder: (context, constraints) {
-      final canUseTwoCols = constraints.maxWidth >= 600;
+      final useHorizontal = constraints.maxWidth >= 600;
 
       return _HoverCard(
+        child: InkWell(
+    borderRadius: BorderRadius.circular(18),
+    onTap: onOpenEvent,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
@@ -573,42 +769,43 @@ Widget build(BuildContext context) {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.black.withOpacity(.05)),
           ),
-          child: canUseTwoCols
-    ? IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.horizontal(
-                left: Radius.circular(18),
-              ),
-              child: SizedBox(
-                width: 260,
-                child: Image(
-                  image: provider,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      Container(color: const Color(0xFFF2F2F2)),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                child: _buildContent(theme),
-              ),
-            ),
-          ],
-        ),
-      )
+          child: useHorizontal
+              ? IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ClipRRect(
+                        borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(18),
+                        ),
+                        child: SizedBox(
+                          width: 260,
+                          child: Image(
+                            image: provider,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                Container(color: const Color(0xFFF2F2F2)),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                              20, 18, 20, 18),
+                          child: _buildContent(theme),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // IMAGE TOP
                     ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
+                      borderRadius:
+                          const BorderRadius.vertical(
                         top: Radius.circular(18),
                       ),
                       child: AspectRatio(
@@ -617,17 +814,20 @@ Widget build(BuildContext context) {
                           image: provider,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) =>
-                              Container(color: const Color(0xFFF2F2F2)),
+                              Container(
+                                  color:
+                                      const Color(0xFFF2F2F2)),
                         ),
                       ),
                     ),
                     Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                      padding: const EdgeInsets.fromLTRB(
+                          16, 14, 16, 16),
                       child: _buildContent(theme),
                     ),
                   ],
                 ),
+        ),
         ),
       );
     },

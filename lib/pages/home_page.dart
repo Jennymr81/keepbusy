@@ -216,19 +216,19 @@ Future<void> _switchUser(String userId) async {
 
   if (userId == current) return;
 
-  await _authRepository.signIn(userId);
+ await _authRepository.signIn(userId);
 
-  if (!mounted) return;
+if (!mounted) return;
 
-  await _loadSlotSelectionsFromPrefs();
+await _loadSlotSelectionsFromPrefs();
 
-  if (!mounted) return;
+if (!mounted) return;
 
-  setState(() {
-    _selectedEventIds
-      ..clear()
-      ..addAll(_eventIdsFromSlotSelections());
-  });
+setState(() {
+  _selectedEventIds
+    ..clear()
+    ..addAll(_eventIdsFromSlotSelections());
+});
 }
   void _toggleFavoriteEvent(Event e, bool isFav) {
     setState(() {
@@ -414,7 +414,6 @@ Future<void> _initDb() async {
       final isar = await getIsar();
 
       final cnt = await isar.events.count();
-      debugPrint('KEEPBUSY(Home): events in DB = $cnt');
 
       final events = await isar.events.where().findAll();
       for (final e in events) {
@@ -501,12 +500,18 @@ Future<void> _initDb() async {
   
 
   Future<void> _addEvent() async {
+  // 🔒 AUTH GUARD — only admins can create events
+  if (!_authRepository.isAdmin) {
+    showSnack('Admin access required');
+    return;
+  }
     final created = await Navigator.of(context).push<Map<String, dynamic>?>(
       MaterialPageRoute(
         builder: (_) => EventEntryFormPage(
-          profiles: _profiles,
-          existing: null,
-        ),
+  profiles: _profiles,
+  existing: null,
+  isAdmin: _authRepository.isAdmin,
+),
       ),
     );
     if (created == null) return;
@@ -549,8 +554,11 @@ Future<void> _initDb() async {
   // BUILD
   // ============================
 
-  @override
-  Widget build(BuildContext context) {
+ @override
+Widget build(BuildContext context) {
+
+
+  // rest of your build logic continues normally...
     // Derived view used by Calendar/Saved/Search while persistence is slot-based
 final sessionSelectionsByEvent = sessionSelections;
 
@@ -573,11 +581,11 @@ Widget page;
         break;
 
       case 2:
-        page = CalendarPage(
-  profiles: _profiles,
-  events: _events,
-  onOpenProfile: (p) async {
-    final result = await Navigator.push<Profile?>(
+  page = CalendarPage(
+    profiles: _profiles,
+    events: _events,
+    onOpenProfile: (p) async {
+      final result = await Navigator.push<Profile?>(
       context,
       MaterialPageRoute(
         builder: (_) => EditProfilePage(
@@ -611,6 +619,7 @@ Widget page;
 
     slotSelections: _slotSelections,
     sessionSelections: sessionSelectionsByEvent,
+    isAdmin: _authRepository.isAdmin,
 );
         break;
 
@@ -620,12 +629,21 @@ Widget page;
     return m != null && m.isNotEmpty;
   }).toList();
 
-  page = SavedPage(
-    profiles: _profiles,
-    events: savedEvents,
-    sessionSelectionsByEvent: sessionSelectionsByEvent,
+page = SavedPage(
+  profiles: _profiles,
+  events: savedEvents,
+  sessionSelectionsByEvent: sessionSelectionsByEvent,
 
-    onOpenEvent: (e) async {
+  isAdmin: _authRepository.isAdmin,  // ← ADD THIS
+
+  onBrowseEvents: () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => idx = 4);
+    });
+  },
+
+  onOpenEvent: (e) async {
       final full = await _loadEventWithSlots(e.id);
       if (full == null) {
         if (!mounted) return;
@@ -635,6 +653,7 @@ Widget page;
         await _reloadEvents();
         return;
       }
+      
 
       final selIndexOK =
           (e.profileIndex >= 0 && e.profileIndex < _profiles.length);
@@ -646,15 +665,16 @@ Widget page;
 
       final eventId = full.id;
 
-      await Navigator.of(context).push(
+      final result = await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => EventDetailsPage(
             event: full,
             profile: sel,
             profiles: _profiles,
             sessionSelections:
-                sessionSelectionsByEvent[eventId] ?? const <int, Set<Id>>{},
+                sessionSelectionsByEvent[eventId] ?? const <Id, Set<Id>>{},
             slotSelections: _slotSelections,
+            isAdmin: _authRepository.isAdmin,
 
             onUpdateSessionSelections: (slotMap) async {
 
@@ -685,8 +705,11 @@ Widget page;
           ),
         ),
       );
-
+if (result is Map && result['delete'] == true) {
+  _handleEventDeletedFromSearch(result['id'] as Id);
+}
     },
+
 
     onUnselectSession: (eventId, sessionIndex) {
       final ev = _events.where((x) => x.id == eventId).toList();
@@ -723,6 +746,7 @@ Widget page;
     events: _events,
     loadById: _loadEventWithSlots,
     slotSelections: _slotSelections,
+    isAdmin: _authRepository.isAdmin,
     favoriteEventIds: _favoriteEventIds,
     selectedEventIds: _selectedEventIds,
     onToggleFavorite: _toggleFavoriteEvent,
@@ -758,13 +782,13 @@ Widget page;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => EventDetailsPage(
-            event: full,
-            profile: sel,
-            profiles: _profiles,
-            sessionSelections:
-                sessionSelections[eventId] ?? const <int, Set<Id>>{},
-            slotSelections: _slotSelections,
-
+  event: full,
+  profile: sel,
+  profiles: _profiles,
+  sessionSelections:
+      sessionSelections[eventId] ?? const <Id, Set<Id>>{},
+  slotSelections: _slotSelections,
+  isAdmin: _authRepository.isAdmin,
             onUpdateSessionSelections: (slotMap) async {
 
               setState(() {

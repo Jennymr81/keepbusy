@@ -45,6 +45,7 @@ class EventDetailsPage extends StatefulWidget {
     required this.profiles,
     this.sessionSelections = const {},
     required this.slotSelections,
+    this.isAdmin = false,
     this.onUpdateSessionSelections,
   });
 
@@ -55,7 +56,7 @@ class EventDetailsPage extends StatefulWidget {
 final Map<Id, Set<Id>> sessionSelections;
 final Map<Id, Set<Id>> slotSelections;
 final void Function(Map<Id, Set<Id>>)? onUpdateSessionSelections;
-
+final bool isAdmin;
 
 
   @override
@@ -148,22 +149,32 @@ void initState() {
     return e;
   }
 
-  Future<void> _editEvent() async {
-    // Load current links/slots before opening the form (no transaction)
-    await _event.slotIds.load();
+Future<void> _editEvent() async {
 
-    // Open the entry form in EDIT mode (no DB work here)
-    final result = await Navigator.push<Map<String, dynamic>?>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EventEntryFormPage(
-          profiles: widget.profiles,
-          existing: _event,
-        ),
-      ),
+  // 🔒 LOGIC GUARD — prevent non-admins from entering edit mode
+  if (!widget.isAdmin) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Admin access required')),
     );
+    return;
+  }
 
-    if (result == null) return;
+  // Load current links/slots before opening the form (no transaction)
+  await _event.slotIds.load();
+
+  // Open the entry form in EDIT mode (no DB work here)
+  final result = await Navigator.push<Map<String, dynamic>?>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EventEntryFormPage(
+        profiles: widget.profiles,
+        existing: _event,
+        isAdmin: widget.isAdmin,
+      ),
+    ),
+  );
+
+  if (result == null) return;
 
     // 0) HANDLE DELETE FIRST — no save work at all
     if (result['delete'] == true) {
@@ -234,19 +245,6 @@ if (hasSavedSelections) {
       // keep same id when editing
       if (_event.id != null) updated.id = _event.id!;
 
-// Clear saved selections for old slots
-for (final old in _event.slotIds) {
-  final oldId = old.id;
-  if (oldId != null) {
-    _slotSelectedProfileIds.remove(oldId);
-  }
-}
-
-if (widget.onUpdateSessionSelections != null) {
-  widget.onUpdateSessionSelections!(
-    Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
-  );
-}
       // remove old slots
       await _event.slotIds.load();
       for (final old in _event.slotIds) {
@@ -274,6 +272,20 @@ if (widget.onUpdateSessionSelections != null) {
       // update local copy for this details page
       _event = updated;
     });
+
+    // Clear saved selections for old slots
+for (final old in _event.slotIds) {
+  final oldId = old.id;
+  if (oldId != null) {
+    _slotSelectedProfileIds.remove(oldId);
+  }
+}
+
+if (widget.onUpdateSessionSelections != null) {
+  widget.onUpdateSessionSelections!(
+    Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
+  );
+}
 
     if (!mounted) return;
     setState(() {}); // refresh UI
@@ -594,25 +606,19 @@ onUnselect: () {
     },
   );
 
-  debugPrint('🔥 BOTTOM SHEET RESULT: $result');
 
-  if (result == null) return;
+if (result == null) return;
 
-// ✅ Write the same selected set to EACH slot in this session
-// ✅ Then rebuild the FULL session map from slot selections (source of truth)
 setState(() {
   for (final sid in slotIds) {
-  _slotSelectedProfileIds[sid] = Set<Id>.from(result);
-}
-
+    _slotSelectedProfileIds[sid] = Set<Id>.from(result);
+  }
 });
-
-debugPrint('🔥 EVENT DETAILS SENDING UP: $_slotSelectedProfileIds');
 
 if (widget.onUpdateSessionSelections != null) {
   widget.onUpdateSessionSelections!(
-  Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
-);
+    Map<Id, Set<Id>>.from(_slotSelectedProfileIds),
+  );
 }
 }
 
@@ -695,6 +701,7 @@ if (widget.onUpdateSessionSelections != null) {
           IconButton(
               onPressed: () {},
               icon: const Icon(Icons.calendar_today_outlined)),
+          if (widget.isAdmin)
           TextButton.icon(
             onPressed: _editEvent,
             icon: const Icon(Icons.edit),
