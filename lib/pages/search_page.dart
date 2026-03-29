@@ -52,6 +52,42 @@ const List<String> kWeekdayShort = [
 enum SortOption { soonest, costLow, titleAZ, newest, relevant, closest }
 
 
+
+// ===============================
+// SEARCH PAGE – CATEGORY & EXPANDABLE CARDS EXPANDER
+// ===============================
+class Category {
+  final String name;
+  final List<String> subcategories;
+  final String image;
+
+  const Category({
+    required this.name,
+    required this.subcategories,
+    required this.image, 
+  });
+}
+
+// Temporary sample data (UI only)
+const List<Category> kCategories = [
+  Category(
+    name: 'Sports',
+    image: 'assets/categories/sports.jpg',
+    subcategories: ['Basketball', 'Soccer', 'Volleyball', 'Baseball', 'Tennis', 'Swimming', 'Gymnastics', 'Martial Arts'],
+  ),
+  Category(
+    name: 'Dance',
+    image: 'assets/categories/sports.jpg',
+    subcategories: ['Hip-Hop', 'Line Dance'],
+  ),
+  Category(
+    name: 'STEM',
+    image: 'assets/categories/sports.jpg',
+    subcategories: ['Robotics', 'Coding'],
+  ),
+];
+
+
 // ==============================
 // Utility helpers
 // ==============================
@@ -135,7 +171,6 @@ final bool isAdmin;
   final void Function(Event e, bool isSelected)? onToggleSelected;
  final void Function(Id deletedId)? onEventDeleted;
 
-
   @override
   State<SimpleSearchPage> createState() => _SimpleSearchPageState();
 }
@@ -169,6 +204,9 @@ Position? _me;
   final TextEditingController _ageMaxCtl = TextEditingController();
   final TextEditingController _costCtl = TextEditingController();
 
+final ScrollController _scrollController = ScrollController();
+  bool _showLeft = false;
+  bool _showRight = true;
 
   int? _ageMin;      // 0–80+
   int? _ageMax;      // 0–80+
@@ -216,6 +254,19 @@ void initState() {
     _loadFromIsar();
     _watch = _isar!.events.watchLazy().listen((_) => _loadFromIsar());
   }
+
+
+  _scrollController.addListener(() {
+    if (!_scrollController.hasClients) return;
+
+    final max = _scrollController.position.maxScrollExtent;
+    final offset = _scrollController.offset;
+
+    setState(() {
+      _showLeft = offset > 10;
+      _showRight = max > 50 && offset < max - 10;
+    });
+  });
 }
 
 
@@ -637,6 +688,7 @@ Future<void> _openFiltersPopup() async {
                         ],
                       ),
                     ),
+                  
 
                     const SizedBox(height: 12),
 
@@ -1409,11 +1461,100 @@ LayoutBuilder(
     );
   },
 ),
+    
+const SizedBox(height: 12),
+
+Padding(
+  padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+  child: Container(), // 👈 temporary placeholder
+),
+
+// 👇 CALL THIS ONCE (initState if needed)
+// _scrollController.addListener(_updateArrows);
 
 
+Stack(
+  children: [
+    SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final category in kCategories)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: _CategoryCard(
+                category: category,
+                onSubcategoryTap: (sub) {
+                  setState(() {
+                    _query = sub;
+                    _searchCtl.text = sub;
+                  });
+                },
+              ),
+            ),
+        ],
+      ),
+    ),
 
 
+    // LEFT ARROW
+    if (_showLeft)
+      Positioned(
+        left: 0,
+        top: 0,
+        bottom: 0,
+        child: Center(
+          child: IconButton(
+  icon: const Icon(
+    Icons.chevron_left,
+    color: Colors.white,
+    size: 32,
+  ),
+  style: IconButton.styleFrom(
+    backgroundColor: Colors.black.withOpacity(0.35),
+    shape: const CircleBorder(),
+  ),
+            onPressed: () {
+              _scrollController.animateTo(
+                (_scrollController.offset - 300).clamp(0, _scrollController.position.maxScrollExtent),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            },
+          ),
+        ),
+      ),
 
+    // RIGHT ARROW
+    if (_showRight)
+      Positioned(
+        right: 0,
+        top: 0,
+        bottom: 0,
+        child: Center(
+          child: IconButton(
+  icon: const Icon(
+    Icons.chevron_right,
+    color: Colors.white,
+    size: 32, // 👈 bigger/bolder
+  ),
+  style: IconButton.styleFrom(
+    backgroundColor: Colors.black.withOpacity(0.35), // 👈 subtle circle
+    shape: const CircleBorder(),
+  ),
+            onPressed: () {
+              _scrollController.animateTo(
+                (_scrollController.offset + 300).clamp(0, _scrollController.position.maxScrollExtent),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            },
+          ),
+        ),
+      ),
+  ],
+),
 
           const SizedBox(height: 8),
 
@@ -1725,10 +1866,10 @@ if (result['delete'] == true) {
                 if (w < 1200) {
                   // PHONE + TABLET + small desktop: single-column list
                   return ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
+                    padding: EdgeInsets.symmetric(
+  horizontal: w < 520 ? 0 : 16, // 👈 FIX
+  vertical: 12,
+),
                     itemCount: filtered.length,
                     itemBuilder: (context, i) => Padding(
                       padding: const EdgeInsets.only(bottom: 16),
@@ -1742,10 +1883,10 @@ if (result['delete'] == true) {
                 const cardH = 190.0;
 
                 return GridView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
+                  padding: EdgeInsets.symmetric(
+  horizontal: w < 520 ? 0 : 16,
+  vertical: 12,
+),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: cols,
@@ -1754,7 +1895,10 @@ if (result['delete'] == true) {
                     mainAxisExtent: cardH,
                   ),
                   itemCount: filtered.length,
-                  itemBuilder: (context, i) => buildCard(i),
+                  itemBuilder: (context, i) => Padding(
+  padding: const EdgeInsets.all(4),
+  child: buildCard(i),
+),
                 );
               },
             ),
@@ -1841,120 +1985,199 @@ class EventQuickViewCard extends StatelessWidget {
         theme.textTheme.bodySmall?.copyWith(color: Colors.black54);
 
     // build the top meta lines (same logic as before)
-    String line1 = (subtitle ?? '').trim();
-    if (line1.isEmpty) {
-      final p1 = <String>[];
-      if (startDate != null) p1.add(_weekday(startDate!)); // DAY only
-      if ((city ?? '').isNotEmpty) p1.add(city!); // CITY
-      line1 = p1.join(' • ');
-    }
+   // build the top meta lines (same logic as before)
+String line1 = (subtitle ?? '').trim();
 
-    final meta = <String>[];
-    if (ageMin != null || ageMax != null) {
-      final a = ageMin?.toString() ?? '';
-      final b = ageMax?.toString() ?? '';
-      meta.add('Ages: $a${(a.isNotEmpty && b.isNotEmpty) ? '–' : ''}$b');
-    }
-    if (levelLabel != null && levelLabel!.isNotEmpty) {
-      meta.add(levelLabel!);
-    }
-    if (weeks != null && weeks! > 0) {
-      meta.add('$weeks weeks');
-    }
-    if (cost != null) {
-      meta.add('\$${cost!.toStringAsFixed(0)}');
-    }
-    final line2 = meta.join(' • ');
+// 🔥 REMOVE CITY from subtitle if present
+if ((city ?? '').isNotEmpty && line1.contains(city!)) {
+  line1 = line1.replaceAll(city!, '').replaceAll('  ', ' ').trim();
 
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .35),
-      borderRadius: BorderRadius.circular(16),
+  // clean leftover separators like "•"
+  if (line1.endsWith('•')) {
+    line1 = line1.substring(0, line1.length - 1).trim();
+  }
+}
+if (line1.isEmpty) {
+  final p1 = <String>[];
+  if (startDate != null) p1.add(_weekday(startDate!)); // DAY only
+  line1 = p1.join(' • ');
+}
+
+// 🔹 CLEAN META (right side only = Ages)
+final meta = <String>[];
+
+if (ageMin != null || ageMax != null) {
+  final a = ageMin?.toString() ?? '';
+  final b = ageMax?.toString() ?? '';
+  meta.add('Ages: $a${(a.isNotEmpty && b.isNotEmpty) ? '–' : ''}$b');
+}
+
+final line2 = meta.join(' • ');
+
+
+return Material(
+  color: Colors.white,
+  elevation: 5,
+  shadowColor: Colors.black.withOpacity(0.24),
+
+  borderRadius: const BorderRadius.only(
+    topLeft: Radius.circular(16),
+    bottomLeft: Radius.circular(16),
+    topRight: Radius.circular(0),
+    bottomRight: Radius.circular(0),
+  ),
+
+  clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onView,
-        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(0, 0, 14, 0),
           child: LayoutBuilder(
             builder: (context, constraints) {
               // Compact layout for phone widths
               final isCompact = constraints.maxWidth < 520;
 
-              final imgH = isCompact ? 160.0 : 130.0;
+              final imgH = isCompact ? 180.0 : 140.0;
               final imgW = isCompact ? constraints.maxWidth : 200.0;
 
               // --- IMAGE ---
-              final imageWidget = ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: imgW,
-                  height: imgH,
-                  child: Image(
-                    image: _imageProvider(imageSrc),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const ColoredBox(color: Color(0xFFEFEFEF)),
-                  ),
-                ),
-              );
+             final imageWidget = ClipRRect(
+  borderRadius: isCompact
+      ? BorderRadius.circular(16)
+      : const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+        ),
+  child: SizedBox(
+    width: isCompact ? double.infinity : imgW,
+    height: imgH,
+    child: Image(
+      image: _imageProvider(imageSrc),
+      fit: BoxFit.cover,
+    ),
+  ),
+);
 
-              // --- TEXT ---
-              final textColumn = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
+             // --- TEXT ---
+final textColumn = Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    // 🔹 TOP ROW (title + right meta)
+    Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // LEFT SIDE
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // TITLE
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+
+              const SizedBox(height: 4),
+
+              // 👇 AGES (always reserves space)
+              SizedBox(
+                height: 16,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    line2, // Ages already built earlier
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: bodySmallMuted,
                   ),
-                  const SizedBox(height: 4),
-                  if (line1.isNotEmpty)
-                    Text(
-                      line1,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: bodySmallMuted,
-                    ),
-                  if (line2.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      line2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: bodySmallMuted,
-                    ),
-                  ],
-                  if ((shortDescription ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      shortDescription!,
-                      maxLines: isCompact ? 2 : 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              );
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(width: 8),
+
+        // RIGHT SIDE (days + city)
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (line1.isNotEmpty)
+              Text(
+                line1,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: bodySmallMuted,
+              ),
+
+            if ((city ?? '').isNotEmpty)
+              Text(
+                city!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: bodySmallMuted,
+              ),
+          ],
+        ),
+      ],
+    ),
+
+    const SizedBox(height: 12),
+
+    // 🔹 DESCRIPTION
+SizedBox(
+  height: 96, // 👈 safe height (adjust if needed)
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // DESCRIPTION
+      if ((shortDescription ?? '').isNotEmpty)
+  Padding(
+    padding: const EdgeInsets.only(bottom: 6), // 👈 pulls text slightly up
+    child: Text(
+      shortDescription!,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+    ),
+  ),
+
+      const Spacer(), 
+           
+            // VIEW SESSIONS (fixed position)
+      Align(
+  alignment: Alignment.bottomRight,
+  child: Padding(
+    padding: const EdgeInsets.only(top: 4), // 👈 move it down slightly
+    child: GestureDetector(
+          onTap: onView,
+          child: Text(
+            'View sessions',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+      ),
+      ),
+  ],
+), 
+),
+  ],
+);
 
               // --- ACTIONS (fav, selected, buttons) ---
 final actionsColumn = Column(
   crossAxisAlignment: CrossAxisAlignment.end,
   mainAxisSize: MainAxisSize.min,
   children: [
-    // Favorite heart
-    IconButton(
-      icon: Icon(
-        isFavorite ? Icons.favorite : Icons.favorite_border,
-        color: theme.colorScheme.primary,
-        size: 22,
-      ),
-      tooltip: 'Save to favorites',
-      onPressed: onToggleFavorite, // can be null; IconButton disables itself
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-    ),
-
     const SizedBox(height: 12),
 
     // Selected checkbox (commented out "//" for testing)
@@ -1972,16 +2195,6 @@ final actionsColumn = Column(
 
     const SizedBox(height: 12),
 
-    // EVENT DETAILS button
-    TextButton(
-      onPressed: onView,
-      style: TextButton.styleFrom(
-        padding: EdgeInsets.zero,
-        minimumSize: const Size(0, 6),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: const Text('EVENT DETAILS'),
-    ),
 
     if (onEdit != null) ...[
       const SizedBox(height: 2),
@@ -2001,13 +2214,37 @@ final actionsColumn = Column(
 
               if (isCompact) {
                 // PHONE / NARROW: stack vertically
-                return Column(
+                return Padding(
+  padding: EdgeInsets.only(right: isCompact ? 0 : 14),
+  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    imageWidget,
+                    Stack(
+  children: [
+    imageWidget, // 👈 keep original (has height!)
+
+    Positioned(
+      top: 6,
+      right: 6,
+      child: IconButton(
+        icon: Icon(
+          isFavorite ? Icons.favorite : Icons.favorite_border,
+          color: Colors.white,
+          size: 22,
+        ),
+        onPressed: onToggleFavorite,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      ),
+    ),
+  ],
+),
                     const SizedBox(height: 10),
-                    textColumn,
+                    Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 12), // 👈 adds side padding
+  child: textColumn,
+),
                     const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2018,22 +2255,61 @@ final actionsColumn = Column(
                       ],
                     ),
                   ],
+                ),
                 );
               } else {
                 // WIDE: original side-by-side layout
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    imageWidget,
-                    const SizedBox(width: 12),
-                    Expanded(child: textColumn),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 140,
-                      child: actionsColumn,
-                    ),
-                  ],
-                );
+                return IntrinsicHeight(
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SizedBox(
+        width: imgW,
+        child: ClipRRect(
+  borderRadius: const BorderRadius.only(
+    topLeft: Radius.circular(16),
+    bottomLeft: Radius.circular(16),
+  ),
+  child: Stack(
+    children: [
+      Positioned.fill(
+        child: Image(
+          image: _imageProvider(imageSrc),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              const ColoredBox(color: Color(0xFFEFEFEF)),
+        ),
+      ),
+
+      // ❤️ FAVORITE BUTTON (top-right of image)
+      Positioned(
+        top: 4,
+        right: 4,
+        child: IconButton(
+          icon: Icon(
+            isFavorite ? Icons.favorite : Icons.favorite_border,
+            color: Colors.white,
+            size: 22,
+          ),
+          onPressed: onToggleFavorite,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+      ),
+    ],
+  ),
+),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+  child: Padding(
+     padding: const EdgeInsets.fromLTRB(4, 10, 14, 14),
+    child: textColumn,
+  ),
+),
+    ],
+  ),
+);
               }
             },
           ),
@@ -2041,4 +2317,187 @@ final actionsColumn = Column(
       ),
     );
   }
+}
+
+// ===============================
+// SEARCH PAGE – CATEGORY & SUBCATEGORY EXPANDABLE CARDS WIDGET
+// ===============================
+class _CategoryCard extends StatefulWidget {
+  const _CategoryCard({
+  required this.category,
+  this.onSubcategoryTap,
+});
+
+  final Category category;
+  final void Function(String subcategory)? onSubcategoryTap;
+
+  @override
+  State<_CategoryCard> createState() => _CategoryCardState();
+}
+
+class _CategoryCardState extends State<_CategoryCard> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: AnimatedContainer(
+  duration: const Duration(milliseconds: 180),
+  curve: Curves.easeOut,
+  width: 260, // 👈 bigger
+  height: 160, // 👈 card height
+  decoration: BoxDecoration(
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: Colors.black.withOpacity(.06)),
+    image: DecorationImage(
+      image: AssetImage(widget.category.image),
+      fit: BoxFit.cover,
+    ),
+  ),
+  child: Stack(
+    children: [
+      // Dark gradient overlay for readability
+      Positioned.fill(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [
+                Colors.black.withOpacity(0.5),
+                Colors.transparent,
+              ],
+            ),
+          ),
+        ),
+      ),
+
+      // Category title
+      Positioned(
+        left: 12,
+        bottom: 12,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.85), // 👈 translucent
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            widget.category.name,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+
+      // Subcategories (hover reveal)
+      // Subcategories (hover reveal)
+AnimatedOpacity(
+  duration: const Duration(milliseconds: 180),
+  opacity: _hovering ? 1 : 0,
+  child: Padding(
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 44),
+    child: SizedBox(
+      height: 82, // 👈 ~3 items max (responsive-safe)
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final sub in widget.category.subcategories)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: _SubcategoryItem(
+                  label: sub,
+                  onTap: () {
+                    if (widget.onSubcategoryTap != null) {
+                      widget.onSubcategoryTap!(sub);
+                    }
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  ),
+),
+    ],
+  ),
+  ),
+    );
+  }
+}
+class _SubcategoryItem extends StatefulWidget {
+  const _SubcategoryItem({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_SubcategoryItem> createState() => _SubcategoryItemState();
+}
+
+class _SubcategoryItemState extends State<_SubcategoryItem> {
+  bool _hovering = false;
+
+  void _setHover(bool value) {
+    if (_hovering != value) {
+      setState(() {
+        _hovering = value;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click, // 👈 nice UX bonus
+      onEnter: (_) => _setHover(true),
+      onExit: (_) => _setHover(false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent, // 👈 improves hover detection
+        onTap: widget.onTap,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 120),
+          opacity: _hovering ? 0.6 : 1.0,
+          child: Text(
+            widget.label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+String _cleanMeta(String input, String? levelLabel) {
+  var text = input;
+
+  // Remove level (already shown under title)
+  if (levelLabel != null && levelLabel.isNotEmpty) {
+    text = text.replaceAll(levelLabel, '');
+  }
+
+  // Remove cost ($...)
+  text = text.replaceAll(RegExp(r'\$\d+'), '');
+
+  // Remove weeks (e.g., "13 weeks")
+  text = text.replaceAll(RegExp(r'\d+\s*weeks?'), '');
+
+  // Clean separators
+  text = text.replaceAll('•  •', '•');
+  text = text.replaceAll('  ', ' ').trim();
+
+  return text;
 }

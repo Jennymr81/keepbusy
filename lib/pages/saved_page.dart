@@ -210,10 +210,14 @@ for (final ev in widget.events) {
     final profileIdxs = entry.value;
     if (profileIdxs.isEmpty) continue;
 
-    if (_selectedProfileIndex >= 0 &&
-        !profileIdxs.contains(_selectedProfileIndex)) {
-      continue;
-    }
+    if (_selectedProfileIndex >= 0) {
+  final selectedProfileId =
+      widget.profiles[_selectedProfileIndex].id;
+
+  if (!profileIdxs.contains(selectedProfileId)) {
+    continue;
+  }
+}
 
     final sessionSlots = slots
         .where((s) => (s.sessionIndex ?? 0) == sessionIndex)
@@ -416,14 +420,20 @@ final p = entry.value;
               ),
             ],
           ),
+          const SizedBox(width: 12),
+
         ],
       );
     }
 
     // WIDE layout (desktop)
     return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
+  scrollDirection: Axis.horizontal,
+  child: ConstrainedBox(
+    constraints: BoxConstraints(
+      minWidth: constraints.maxWidth,
+    ),
+    child: Row(
         children: [
           _ProfileFilterChip(
             label: 'All',
@@ -485,6 +495,7 @@ final p = entry.value;
           ),
         ],
       ),
+  ),
     );
   },
 ),
@@ -536,7 +547,7 @@ const SizedBox(height: 12),
             Text(
               _selectedProfileIndex == -1
                   ? 'No saved sessions yet'
-                  : 'No saved sessions for ${_profileLabel(_selectedProfileIndex)}',
+                  : 'No saved sessions for ${_profileLabel(widget.profiles[_selectedProfileIndex].id)}',
               textAlign: TextAlign.center,
              style: Theme.of(context)
     .textTheme
@@ -610,7 +621,7 @@ final canUseTwoCols =
                 if (!canUseTwoCols) {
   return Column(
     children: [
-      ...activeSessions.map((m) {
+      ...savedSessions.map((m) {
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: SelectedSessionCard(
@@ -786,7 +797,7 @@ final canUseTwoCols =
 
 
 // Simple “chip” used in the profile filter row
-class _ProfileFilterChip extends StatelessWidget {
+class _ProfileFilterChip extends StatefulWidget {
   const _ProfileFilterChip({
     required this.label,
     required this.selected,
@@ -800,13 +811,21 @@ class _ProfileFilterChip extends StatelessWidget {
   final Profile? profile;
 
   @override
+  State<_ProfileFilterChip> createState() => _ProfileFilterChipState();
+}
+
+class _ProfileFilterChipState extends State<_ProfileFilterChip> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     ImageProvider? avatar;
 
-    if (profile?.asset != null && profile!.asset!.isNotEmpty) {
-      final path = profile!.asset!;
+    if (widget.profile?.asset != null &&
+        widget.profile!.asset!.isNotEmpty) {
+      final path = widget.profile!.asset!;
 
       if (path.startsWith('http')) {
         avatar = NetworkImage(path);
@@ -817,45 +836,63 @@ class _ProfileFilterChip extends StatelessWidget {
       }
     }
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? cs.secondaryContainer : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? cs.primary : Colors.black26,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (profile != null) ...[
-              CircleAvatar(
-                radius: 10,
-                backgroundImage: avatar,
-                child: avatar == null
-                    ? const Icon(Icons.person, size: 12)
-                    : null,
-              ),
-              const SizedBox(width: 6),
-            ],
+    // 🎨 Background color logic
+    Color bgColor;
+    if (widget.selected) {
+      bgColor = cs.secondaryContainer;
+    } else if (_hovering) {
+      bgColor = cs.secondaryContainer.withOpacity(0.4); // 👈 light teal
+    } else {
+      bgColor = Colors.white;
+    }
 
-            if (selected) ...[
-              Icon(Icons.check, size: 16, color: cs.primary),
-              const SizedBox(width: 4),
-            ],
-
-            Text(
-              label,
-              style: TextStyle(
-                fontWeight:
-                    selected ? FontWeight.w600 : FontWeight.w400,
-              ),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: widget.selected
+                  ? cs.primary
+                  : Colors.black26,
             ),
-          ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.profile != null) ...[
+                CircleAvatar(
+                  radius: 11,
+                  backgroundImage: avatar,
+                  child: avatar == null
+                      ? const Icon(Icons.person, size: 12)
+                      : null,
+                ),
+                const SizedBox(width: 8),
+              ],
+
+              if (widget.selected) ...[
+                Icon(Icons.check, size: 16, color: cs.primary),
+                const SizedBox(width: 4),
+              ],
+
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontWeight: widget.selected
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1138,21 +1175,45 @@ class _HoverCardState extends State<_HoverCard> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-  BoxShadow(
-    color: Colors.black.withOpacity(_hovering ? 0.10 : 0.04),
-    blurRadius: _hovering ? 16 : 8,
-    offset: const Offset(0, 4),
-  ),
-],
+    child: AnimatedContainer(
+  duration: const Duration(milliseconds: 180),
+  curve: Curves.easeOut,
+  child: ClipRect(
+    child: Stack(
+      children: [
+        // Shadow layer (clipped to bottom)
+        Positioned.fill(
+          top: 8,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: _hovering
+                  ? [
+                      BoxShadow(
+          color: Colors.black.withOpacity(0.18),
+          blurRadius: 18,
+          offset: const Offset(0, 8),
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 6,
+                        spreadRadius: -6,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+            ),
+          ),
         ),
-        child: widget.child,
-      ),
+
+        // Actual card
+        widget.child,
+      ],
+    ),
+  ),
+),
     );
   }
 }
+
