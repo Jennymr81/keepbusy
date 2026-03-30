@@ -2017,8 +2017,7 @@ final line2 = meta.join(' • ');
 
 return Material(
   color: Colors.white,
-  elevation: 5,
-  shadowColor: Colors.black.withOpacity(0.24),
+  elevation: 0,
 
   borderRadius: const BorderRadius.only(
     topLeft: Radius.circular(16),
@@ -2031,7 +2030,7 @@ return Material(
       child: InkWell(
         onTap: onView,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(0, 0, 14, 0),
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
           child: LayoutBuilder(
             builder: (context, constraints) {
               // Compact layout for phone widths
@@ -2041,16 +2040,18 @@ return Material(
               final imgW = isCompact ? constraints.maxWidth : 200.0;
 
               // --- IMAGE ---
-             final imageWidget = ClipRRect(
-  borderRadius: isCompact
-      ? BorderRadius.circular(16)
-      : const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          bottomLeft: Radius.circular(16),
-        ),
-  child: SizedBox(
-    width: isCompact ? double.infinity : imgW,
-    height: imgH,
+final imageWidget = SizedBox(
+  width: isCompact ? double.infinity : imgW,
+  height: imgH,
+  child: ClipRRect(
+    borderRadius: isCompact
+        ? const BorderRadius.vertical(
+            top: Radius.circular(16),
+          )
+        : const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+          ),
     child: Image(
       image: _imageProvider(imageSrc),
       fit: BoxFit.cover,
@@ -2065,7 +2066,7 @@ final textColumn = Column(
   children: [
     // 🔹 TOP ROW (title + right meta)
     Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // LEFT SIDE
         Expanded(
@@ -2214,15 +2215,23 @@ final actionsColumn = Column(
 
               if (isCompact) {
                 // PHONE / NARROW: stack vertically
-                return Padding(
-  padding: EdgeInsets.only(right: isCompact ? 0 : 14),
+                return Container(
+  decoration: BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(16),
+  ),
   child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+  crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Stack(
   children: [
-    imageWidget, // 👈 keep original (has height!)
+    ClipRRect(
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(16),
+      ),
+      child: imageWidget,
+    ),
 
     Positioned(
       top: 6,
@@ -2242,7 +2251,7 @@ final actionsColumn = Column(
 ),
                     const SizedBox(height: 10),
                     Padding(
-  padding: const EdgeInsets.symmetric(horizontal: 12), // 👈 adds side padding
+  padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
   child: textColumn,
 ),
                     const SizedBox(height: 8),
@@ -2255,7 +2264,7 @@ final actionsColumn = Column(
                       ],
                     ),
                   ],
-                ),
+  ),
                 );
               } else {
                 // WIDE: original side-by-side layout

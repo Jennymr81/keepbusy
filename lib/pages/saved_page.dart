@@ -504,7 +504,7 @@ const SizedBox(height: 12),
 
 const SizedBox(height: 12),
 
-            // Yellow selected-session cards
+            // selected-session cards
             Expanded(
   child: savedSessions.isEmpty
       ? Center(
@@ -990,17 +990,18 @@ Widget build(BuildContext context) {
     builder: (context, constraints) {
       final useHorizontal = constraints.maxWidth >= 600;
 
-      return _HoverCard(
-        child: InkWell(
-    borderRadius: BorderRadius.circular(18),
-    onTap: onOpenEvent,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.black.withOpacity(.05)),
-          ),
+      return Padding(
+  padding: const EdgeInsets.symmetric(vertical: 10),
+  child: _HoverCard(
+    child: InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onOpenEvent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.black.withOpacity(.05)),
+        ),
           child: useHorizontal
               ? IntrinsicHeight(
                   child: Row(
@@ -1061,6 +1062,7 @@ Widget build(BuildContext context) {
                 ),
         ),
         ),
+  ),
       );
     },
   );
@@ -1071,6 +1073,74 @@ Widget _buildContent(ThemeData theme) {
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
     children: [
+      // 🔹 HEADER (Search-style)
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // LEFT SIDE
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  eventTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+
+                SizedBox(
+                  height: 16,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      metaLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: Colors.black54),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // RIGHT SIDE
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (dayDateLabel.isNotEmpty)
+                Text(
+                  dayDateLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.black54),
+                ),
+
+              if (timeLabel.isNotEmpty)
+                Text(
+                  timeLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.black54),
+                ),
+            ],
+          ),
+        ],
+      ),
+
+      const SizedBox(height: 12),
+
+      // 🔹 SESSION CHIP (keep your feature)
       if (sessionLabel.isNotEmpty) ...[
         Container(
           padding:
@@ -1090,40 +1160,17 @@ Widget _buildContent(ThemeData theme) {
         const SizedBox(height: 10),
       ],
 
-      Text(
-        eventTitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleMedium
-            ?.copyWith(fontWeight: FontWeight.w700),
-      ),
-
-      const SizedBox(height: 6),
-
-      if (dayDateLabel.isNotEmpty)
-        Text(dayDateLabel, style: theme.textTheme.bodySmall),
-
-      if (timeLabel.isNotEmpty)
-        Text(timeLabel, style: theme.textTheme.bodySmall),
-
-      const SizedBox(height: 8),
-
-      if (metaLabel.isNotEmpty)
-        Text(
-          metaLabel,
-          style:
-              theme.textTheme.bodySmall?.copyWith(color: Colors.black87),
-        ),
-
+      // 🔹 PROFILES
       if (forProfilesLabel.isNotEmpty)
         Text(
           forProfilesLabel,
-          style:
-              theme.textTheme.bodySmall?.copyWith(color: Colors.black54),
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: Colors.black54),
         ),
 
-      const SizedBox(height: 14),
+      const SizedBox(height: 12),
 
+      // 🔹 ACTIONS (unchanged)
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -1141,7 +1188,7 @@ Widget _buildContent(ThemeData theme) {
             children: [
               TextButton(
                 onPressed: onOpenEvent,
-                child: const Text('VIEW EVENT'),
+                child: const Text('View Event Details'),
               ),
               if (onEditEvent != null) ...[
                 const SizedBox(width: 8),
@@ -1181,35 +1228,24 @@ class _HoverCardState extends State<_HoverCard> {
   child: ClipRect(
     child: Stack(
       children: [
-        // Shadow layer (clipped to bottom)
-        Positioned.fill(
-          top: 8,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: _hovering
-                  ? [
-                      BoxShadow(
-          color: Colors.black.withOpacity(0.18),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 6,
-                        spreadRadius: -6,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-            ),
-          ),
-        ),
+  // Actual card
+  widget.child,
 
-        // Actual card
-        widget.child,
-      ],
+  // Hover overlay (on top)
+  Positioned.fill(
+  child: IgnorePointer(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(16), // match card radius
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        color: _hovering
+            ? Colors.grey.withOpacity(0.12)
+            : Colors.transparent,
+      ),
+    ),
+  ),
+),
+],
     ),
   ),
 ),
