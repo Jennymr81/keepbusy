@@ -9,6 +9,7 @@ import '../models/event_models.dart';
 import '../models/profile.dart';
 
 import '../widgets/selected_session_card.dart';
+import 'package:intl/intl.dart';
 
 // ==============================
 // Saved Page-specific helpers
@@ -234,6 +235,7 @@ sessionSlots.sort((a, b) => a.date.compareTo(b.date));
     final ages = _agesLabel(sessionSlots);
     final cost = _costLabel(sessionSlots);
     final level = _levelLabel(sessionSlots);
+  
 
     final loc = (ev.locationName ?? '').trim();
     final dayDate = [
@@ -252,6 +254,11 @@ sessionSlots.sort((a, b) => a.date.compareTo(b.date));
 final forLabel =
     'For: ' + profileIdxs.map(_profileLabel).join(', ');
 
+final sessionLocation = slots
+    .where((s) => s.sessionIndex == sessionIndex)
+    .map((s) => s.locationName ?? '')
+    .firstWhere((loc) => loc.isNotEmpty, orElse: () => '');
+
     final sessionView = _SavedSessionView(
   event: ev,
   eventId: id,
@@ -265,6 +272,8 @@ final forLabel =
   metaLabel: meta,
   forProfilesLabel: forLabel,
   imageSrc: imageSrc,
+  sessionLocation: sessionLocation,
+
   profileIds: Set<Id>.from(profileIdxs),
 );
 
@@ -614,14 +623,14 @@ for (final m in savedSessions) {
     activeSessions.add(m);
   }
 }
-                const minCardWidth = 540.0; // safe width for horizontal card
+               const minCardWidth = 540.0;
 final canUseTwoCols =
     constraints.maxWidth >= (minCardWidth * 2 + 24);
 
-                if (!canUseTwoCols) {
+if (!canUseTwoCols) {
   return Column(
     children: [
-      ...savedSessions.map((m) {
+      ...activeSessions.map((m) {
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: SelectedSessionCard(
@@ -632,8 +641,8 @@ final canUseTwoCols =
             metaLabel: m.metaLabel,
             forProfilesLabel: m.forProfilesLabel,
             imageSrc: m.imageSrc,
-            onOpenEvent: () =>
-                widget.onOpenEvent(m.event),
+            sessionLocation: m.sessionLocation,
+            onOpenEvent: () => widget.onOpenEvent(m.event),
             onEditEvent: null,
             onUnselect: widget.onUnselectSession == null
                 ? null
@@ -667,16 +676,15 @@ final canUseTwoCols =
                   metaLabel: m.metaLabel,
                   forProfilesLabel: m.forProfilesLabel,
                   imageSrc: m.imageSrc,
-                  onOpenEvent: () =>
-                      widget.onOpenEvent(m.event),
+                  sessionLocation: m.sessionLocation,
+                  onOpenEvent: () => widget.onOpenEvent(m.event),
                   onEditEvent: null,
-                  onUnselect:
-                      widget.onUnselectSession == null
-                          ? null
-                          : () => widget.onUnselectSession!(
-                                m.eventId,
-                                m.sessionIndex,
-                              ),
+                  onUnselect: widget.onUnselectSession == null
+                      ? null
+                      : () => widget.onUnselectSession!(
+                            m.eventId,
+                            m.sessionIndex,
+                          ),
                 ),
               ),
           ],
@@ -686,7 +694,7 @@ final canUseTwoCols =
   );
 }
 
-                return Column(
+return Column(
   children: [
     for (int i = 0; i < activeSessions.length; i += 2)
       Padding(
@@ -701,41 +709,56 @@ final canUseTwoCols =
                 dayDateLabel: activeSessions[i].dayDateLabel,
                 timeLabel: activeSessions[i].timeLabel,
                 metaLabel: activeSessions[i].metaLabel,
-                forProfilesLabel: activeSessions[i].forProfilesLabel,
+                forProfilesLabel:
+                    activeSessions[i].forProfilesLabel,
                 imageSrc: activeSessions[i].imageSrc,
-                onOpenEvent: () =>
-                    widget.onOpenEvent(activeSessions[i].event),
+                sessionLocation:
+                    activeSessions[i].sessionLocation,
+
+                onOpenEvent: () => widget
+                    .onOpenEvent(activeSessions[i].event),
                 onEditEvent: null,
-                onUnselect:
-                    widget.onUnselectSession == null
-                        ? null
-                        : () => widget.onUnselectSession!(
-                              activeSessions[i].eventId,
-                              activeSessions[i].sessionIndex,
-                            ),
+                onUnselect: widget.onUnselectSession == null
+                    ? null
+                    : () => widget.onUnselectSession!(
+                          activeSessions[i].eventId,
+                          activeSessions[i].sessionIndex,
+                        ),
               ),
             ),
             const SizedBox(width: 24),
             if (i + 1 < activeSessions.length)
               Expanded(
                 child: SelectedSessionCard(
-                  eventTitle: activeSessions[i + 1].eventTitle,
-                  sessionLabel: activeSessions[i + 1].sessionLabel,
-                  dayDateLabel: activeSessions[i + 1].dayDateLabel,
-                  timeLabel: activeSessions[i + 1].timeLabel,
-                  metaLabel: activeSessions[i + 1].metaLabel,
+                  eventTitle:
+                      activeSessions[i + 1].eventTitle,
+                  sessionLabel:
+                      activeSessions[i + 1].sessionLabel,
+                  dayDateLabel:
+                      activeSessions[i + 1].dayDateLabel,
+                  timeLabel:
+                      activeSessions[i + 1].timeLabel,
+                  metaLabel:
+                      activeSessions[i + 1].metaLabel,
                   forProfilesLabel:
-                      activeSessions[i + 1].forProfilesLabel,
-                  imageSrc: activeSessions[i + 1].imageSrc,
-                  onOpenEvent: () =>
-                      widget.onOpenEvent(activeSessions[i + 1].event),
+                      activeSessions[i + 1]
+                          .forProfilesLabel,
+                  imageSrc:
+                      activeSessions[i + 1].imageSrc,
+                  sessionLocation:
+                      activeSessions[i + 1]
+                          .sessionLocation,
+                  onOpenEvent: () => widget.onOpenEvent(
+                      activeSessions[i + 1].event),
                   onEditEvent: null,
                   onUnselect:
                       widget.onUnselectSession == null
                           ? null
                           : () => widget.onUnselectSession!(
-                                activeSessions[i + 1].eventId,
-                                activeSessions[i + 1].sessionIndex,
+                                activeSessions[i + 1]
+                                    .eventId,
+                                activeSessions[i + 1]
+                                    .sessionIndex,
                               ),
                 ),
               )
@@ -744,7 +767,8 @@ final canUseTwoCols =
           ],
         ),
       ),
-       if (pastSessions.isNotEmpty) ...[
+
+    if (pastSessions.isNotEmpty) ...[
       const SizedBox(height: 32),
       ExpansionTile(
         title: Text(
@@ -766,16 +790,15 @@ final canUseTwoCols =
                 metaLabel: m.metaLabel,
                 forProfilesLabel: m.forProfilesLabel,
                 imageSrc: m.imageSrc,
-                onOpenEvent: () =>
-                    widget.onOpenEvent(m.event),
+                sessionLocation: m.sessionLocation,
+                onOpenEvent: () => widget.onOpenEvent(m.event),
                 onEditEvent: null,
-                onUnselect:
-                    widget.onUnselectSession == null
-                        ? null
-                        : () => widget.onUnselectSession!(
-                              m.eventId,
-                              m.sessionIndex,
-                            ),
+                onUnselect: widget.onUnselectSession == null
+                    ? null
+                    : () => widget.onUnselectSession!(
+                          m.eventId,
+                          m.sessionIndex,
+                        ),
               ),
             ),
         ],
@@ -901,26 +924,12 @@ class _ProfileFilterChipState extends State<_ProfileFilterChip> {
 
 // Simple view-model used inside SavedPage
 class _SavedSessionView {
-  _SavedSessionView({
-    required this.event,
-    required this.eventId,
-    required this.sessionIndex,
-    required this.profileIds,
-    required this.eventTitle,
-    required this.sessionLabel,
-    required this.dayDateLabel,
-    required this.timeLabel,
-    required this.metaLabel,
-    required this.forProfilesLabel,
-    required this.imageSrc,
-    required this.firstDate,
-    required this.lastDate,
-  });
-
   final Event event;
   final Id eventId;
   final int sessionIndex;
-  final Set<Id> profileIds;
+
+  final DateTime firstDate;
+  final DateTime lastDate;
 
   final String eventTitle;
   final String sessionLabel;
@@ -929,8 +938,26 @@ class _SavedSessionView {
   final String metaLabel;
   final String forProfilesLabel;
   final String imageSrc;
-  final DateTime firstDate;
-  final DateTime lastDate;
+  final String sessionLocation;
+
+  final Set<Id> profileIds;
+
+  _SavedSessionView({
+    required this.event,
+    required this.eventId,
+    required this.sessionIndex,
+    required this.firstDate,
+    required this.lastDate,
+    required this.eventTitle,
+    required this.sessionLabel,
+    required this.dayDateLabel,
+    required this.timeLabel,
+    required this.metaLabel,
+    required this.forProfilesLabel,
+    required this.imageSrc,
+    required this.sessionLocation,
+    required this.profileIds,
+  });
 }
 
 // ===============================
@@ -946,6 +973,7 @@ class SelectedSessionCard extends StatelessWidget {
     required this.metaLabel,
     required this.forProfilesLabel,
     required this.imageSrc,
+    required this.sessionLocation,
     this.onOpenEvent,
     this.onEditEvent,
     this.onUnselect,
@@ -958,6 +986,8 @@ class SelectedSessionCard extends StatelessWidget {
   final String metaLabel;
   final String forProfilesLabel;
   final String imageSrc;
+  final String sessionLocation;
+  
 
   final VoidCallback? onOpenEvent;
   final VoidCallback? onEditEvent;
@@ -1025,7 +1055,7 @@ Widget build(BuildContext context) {
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(
                               20, 18, 20, 18),
-                          child: _buildContent(theme),
+                          child: _buildContent(theme, constraints),
                         ),
                       ),
                     ],
@@ -1056,7 +1086,7 @@ Widget build(BuildContext context) {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(
                           16, 14, 16, 16),
-                      child: _buildContent(theme),
+                      child: _buildContent(theme, constraints),
                     ),
                   ],
                 ),
@@ -1068,75 +1098,176 @@ Widget build(BuildContext context) {
   );
 }
 
-Widget _buildContent(ThemeData theme) {
+
+
+Widget _buildContent(ThemeData theme, BoxConstraints constraints) {
+
+  // 🔹 Extract location + cleaned date text
+  String location = '';
+  String cleanedDayDate = dayDateLabel;
+  // 🔹 Split meta into structured parts
+String ageText = '';
+String levelText = '';
+String durationCostText = '';
+// 🔹 Compute session status
+String sessionStatus = '';
+
+try {
+  if (cleanedDayDate.contains('–')) {
+    final parts = cleanedDayDate.split('–');
+
+    if (parts.length == 2) {
+      final now = DateTime.now();
+      final year = now.year;
+
+      final startRaw = parts[0].trim().replaceAll(RegExp(r'^[A-Za-z]{3} • '), '');
+      final endRaw = parts[1].trim();
+
+      final format = DateFormat('MMM d');
+
+      final startDate = format.parse('$startRaw').copyWith(year: year);
+      final endDate = format.parse('$endRaw').copyWith(year: year);
+
+      if (now.isAfter(startDate) && now.isBefore(endDate)) {
+        sessionStatus = 'In Session';
+      } else if (startDate.difference(now).inDays <= 7 &&
+          startDate.isAfter(now)) {
+        sessionStatus = 'Starting Soon';
+      }
+    }
+  }
+} catch (_) {
+  // safe fallback
+}
+
+if (metaLabel.contains('•')) {
+  final parts = metaLabel.split('•').map((e) => e.trim()).toList();
+
+  if (parts.isNotEmpty) ageText = parts[0];
+  if (parts.length > 1) levelText = parts[1];
+  if (parts.length > 2) {
+    durationCostText = parts.sublist(2).join(' • ');
+  }
+}
+
+if (dayDateLabel.contains('•')) {
+  final parts = dayDateLabel.split('•').map((e) => e.trim()).toList();
+
+  if (parts.length > 1) {
+    location = sessionLocation.isNotEmpty ? sessionLocation : parts.first;
+    cleanedDayDate = parts.sublist(1).join(' • ');
+  }
+}
+
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
     children: [
       // 🔹 HEADER (Search-style)
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // LEFT SIDE
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  eventTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+      // 🔹 TITLE (always on top)
+Text(
+  eventTitle,
+  maxLines: 2,
+  overflow: TextOverflow.ellipsis,
+  style: theme.textTheme.titleMedium?.copyWith(
+    fontWeight: FontWeight.w800,
+  ),
+),
 
-                const SizedBox(height: 4),
+const SizedBox(height: 6),
 
-                SizedBox(
-                  height: 16,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      metaLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: Colors.black54),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+if (sessionStatus.isNotEmpty) ...[
+  Text(
+  sessionStatus,
+  style: theme.textTheme.bodySmall?.copyWith(
+    color: sessionStatus == 'In Session'
+        ? Colors.green
+        : Colors.orange,
+    fontWeight: FontWeight.w600,
+  ),
+),
+  const SizedBox(height: 6),
+],
 
-          const SizedBox(width: 8),
-
-          // RIGHT SIDE
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (dayDateLabel.isNotEmpty)
-                Text(
-                  dayDateLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: Colors.black54),
-                ),
-
-              if (timeLabel.isNotEmpty)
-                Text(
-                  timeLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: Colors.black54),
-                ),
-            ],
-          ),
-        ],
+// 🔹 RESPONSIVE META SECTION
+// 🔹 META SECTION (stable layout)
+// 🔹 META SECTION (responsive-safe)
+Row(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+    // LEFT SIDE
+    Expanded(
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (metaLabel.isNotEmpty)
+        Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    if (ageText.isNotEmpty)
+      Text(
+        ageText,
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: Colors.black54),
       ),
+
+    if (levelText.isNotEmpty)
+      Text(
+        levelText,
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: Colors.black54),
+      ),
+
+    if (durationCostText.isNotEmpty) ...[
+      const SizedBox(height: 2),
+      Text(
+        durationCostText,
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: Colors.black54),
+      ),
+    ],
+  ],
+),
+    ],
+  ),
+),
+
+
+    // RIGHT SIDE (anchored)
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (cleanedDayDate.isNotEmpty)
+          Text(
+            cleanedDayDate,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: Colors.black54),
+          ),
+
+        if (timeLabel.isNotEmpty)
+          Text(
+            timeLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: Colors.black54),
+          ),
+
+        if (location.isNotEmpty)
+          Text(
+            location,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: Colors.black54),
+          ),
+      ],
+    ),
+  ],
+),
 
       const SizedBox(height: 12),
 
@@ -1160,15 +1291,15 @@ Widget _buildContent(ThemeData theme) {
         const SizedBox(height: 10),
       ],
 
-      // 🔹 PROFILES
-      if (forProfilesLabel.isNotEmpty)
-        Text(
-          forProfilesLabel,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: Colors.black54),
-        ),
+      // 🔹 PROFILES (placeholder for avatars)
+if (forProfilesLabel.isNotEmpty)
+  Row(
+    children: [
+      // avatars will go here next step
+    ],
+  ),
 
-      const SizedBox(height: 12),
+const SizedBox(height: 12),
 
       // 🔹 ACTIONS (unchanged)
       Row(

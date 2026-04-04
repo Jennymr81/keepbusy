@@ -440,18 +440,18 @@ final forLabel = selected.isEmpty
       if (cost.isNotEmpty) metaParts.add(cost);
       final metaLabel = metaParts.join(' • ');
 
-      cards.add(
-        SelectedSessionCard(
-          eventTitle: _event.title,
-          sessionLabel: 'Session ${key + 1}',
-          dayDateLabel: '$days • ${_md(first)} – ${_md(last)}',
-          timeLabel: time,
-          metaLabel: metaLabel,
-          forProfilesLabel: forLabel,
-          imageSrc: imageSrc,
-          onOpenEvent: () {
-            // already on this event; no-op for now
-          },
+cards.add(
+  SelectedSessionCard(
+    eventTitle: _event.title,
+    sessionLabel: 'Session ${key + 1}',
+    dayDateLabel: '$days • ${_md(first)} – ${_md(last)}',
+    timeLabel: time,
+    metaLabel: metaLabel,
+    forProfilesLabel: forLabel,
+    imageSrc: imageSrc,
+    sessionLocation: '', 
+    onOpenEvent: () {
+    },
           onEditEvent: _editEvent,
 onUnselect: () {
   setState(() {

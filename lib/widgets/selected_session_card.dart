@@ -1,5 +1,6 @@
 import 'dart:io' show File;
 import 'package:flutter/material.dart';
+import 'package:keepbusy/models/profile.dart';
 
 // ===============================
 // SELECTED SESSION CARD
@@ -15,6 +16,7 @@ class SelectedSessionCard extends StatelessWidget {
     required this.metaLabel,
     required this.forProfilesLabel,
     required this.imageSrc,
+    required this.sessionLocation,
     this.onOpenEvent,
     this.onEditEvent,
     this.onUnselect,
@@ -27,6 +29,7 @@ class SelectedSessionCard extends StatelessWidget {
   final String metaLabel;
   final String forProfilesLabel;
   final String imageSrc;
+  final String sessionLocation;
 
   final VoidCallback? onOpenEvent;
   final VoidCallback? onEditEvent;
