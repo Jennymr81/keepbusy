@@ -9,6 +9,9 @@ typedef ProfileId = Id;
 class Profile {
   Id id = Isar.autoIncrement;
 
+  @Index()
+late String userId;
+
   String firstName = '';
   String lastName = '';
   String? nickname;

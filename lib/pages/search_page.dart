@@ -329,7 +329,6 @@ Future<void> _loadFromIsar() async {
     if (!mounted) return;
     setState(() => _events = list);
   } catch (e) {
-    // optional: debugPrint('Load from Isar failed: $e');
   }
 }
 

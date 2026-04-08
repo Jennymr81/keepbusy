@@ -14,22 +14,64 @@ class ProfilesRepositoryIsar {
     _isar ??= await getIsar();
   }
 
+  // ===============================
+  // 🔹 LOAD PROFILES (ALL - legacy)
+  // ===============================
   static Future<List<Profile>> loadProfiles() async {
     final isar = _isar ?? await getIsar();
     _isar = isar;
     return isar.collection<Profile>().where().findAll();
   }
 
+  // ===============================
+  // 🔹 LOAD PROFILES BY USER ✅ NEW
+  // ===============================
+  static Future<List<Profile>> loadProfilesByUser(String userId) async {
+    final isar = _isar ?? await getIsar();
+    _isar = isar;
+
+    return isar
+        .collection<Profile>()
+        .filter()
+        .userIdEqualTo(userId)
+        .findAll();
+  }
+
+  // ===============================
+  // 🔹 SAVE PROFILE (legacy)
+  // ===============================
   static Future<void> saveProfile(Profile profile) async {
     final isar = _isar ?? await getIsar();
     _isar = isar;
 
     await isar.writeTxn(() async {
       final id = await isar.collection<Profile>().put(profile);
-      profile.id = id; // keep object in sync
+      profile.id = id;
     });
   }
 
+  // ===============================
+  // 🔹 SAVE PROFILE WITH USER ✅ NEW
+  // ===============================
+static Future<void> saveProfileForUser(
+    Profile profile, String userId) async {
+
+  debugPrint('SAVING PROFILE FOR USER: $userId');
+
+  final isar = _isar ?? await getIsar();
+  _isar = isar;
+
+  profile.userId = userId;
+
+  await isar.writeTxn(() async {
+    final id = await isar.collection<Profile>().put(profile);
+    profile.id = id;
+  });
+}
+
+  // ===============================
+  // 🔹 DELETE PROFILE
+  // ===============================
   static Future<void> deleteProfile(Profile profile) async {
     final isar = _isar ?? await getIsar();
     _isar = isar;
@@ -40,7 +82,6 @@ class ProfilesRepositoryIsar {
         return;
       }
 
-      // fallback if id missing
       final match = await isar
           .collection<Profile>()
           .filter()

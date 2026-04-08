@@ -14,7 +14,7 @@ import 'package:keepbusy/models/saved_state.dart';
 final Future<Isar> _isarFuture = _openIsar();
 
 Future<Isar> _openIsar() async {
-  const dbName = 'keepbusy_dev4';  // 👈 fresh dev DB
+  const dbName = 'keepbusy_dev6';
 
   // Reuse if already open
   final existing = Isar.getInstance(dbName);
@@ -29,7 +29,7 @@ final schemas = [EventSchema, EventSlotSchema, ProfileSchema, SavedStateSchema];
 
   return Isar.open(
     schemas,
-    name: dbName,
+     name: dbName,
     directory: dirPath,
     inspector: kDebugMode,
   );

@@ -77,7 +77,7 @@ final List<String> _devUsers = [
 final SavedRepositoryIsar _savedRepository = SavedRepositoryIsar();
 
   // in-memory favorites / selected (by event Id)
-  final Set<Id> _favoriteEventIds = <Id>{};
+  final Map<String, Set<Id>> _userFavoriteEventIds = {};
   final Set<Id> _selectedEventIds = <Id>{};
 
 final Map<String, Map<int, Set<Id>>> _userSlotSelections = {};
@@ -89,6 +89,15 @@ Map<int, Set<Id>> get _slotSelections {
   }
 
   return _userSlotSelections[userId] ??= <int, Set<Id>>{};
+}
+
+Set<Id> get _favoriteEventIds {
+  final userId = _authRepository.currentUserId;
+  if (userId == null) {
+    return <Id>{};
+  }
+
+  return _userFavoriteEventIds[userId] ??= <Id>{};
 }
 
  Map<Id, Map<int, Set<Id>>> get sessionSelections {
@@ -190,8 +199,7 @@ final loaded = await _savedRepository.load(userId);
           ..addAll(_eventIdsFromSlotSelections());
       });
     } catch (e, st) {
-      debugPrint('Failed to load saved state: $e');
-      debugPrintStack(stackTrace: st);
+    
     }
   }
 
@@ -206,8 +214,7 @@ Future<void> _saveSlotSelectionsToPrefs() async {
       ),
     );
   } catch (e, st) {
-    debugPrint('Failed to save saved state: $e');
-    debugPrintStack(stackTrace: st);
+
   }
 }
 
@@ -216,19 +223,25 @@ Future<void> _switchUser(String userId) async {
 
   if (userId == current) return;
 
- await _authRepository.signIn(userId);
+  await _authRepository.signIn(userId);
 
-if (!mounted) return;
+  // 🔹 NEW: reload profiles for this user
+  final profiles =
+      await ProfilesRepositoryIsar.loadProfilesByUser(userId);
 
-await _loadSlotSelectionsFromPrefs();
+  if (!mounted) return;
 
-if (!mounted) return;
+  await _loadSlotSelectionsFromPrefs();
 
-setState(() {
-  _selectedEventIds
-    ..clear()
-    ..addAll(_eventIdsFromSlotSelections());
-});
+  if (!mounted) return;
+
+  setState(() {
+    _profiles = profiles; // ✅ THIS is the fix
+
+    _selectedEventIds
+      ..clear()
+      ..addAll(_eventIdsFromSlotSelections());
+  });
 }
   void _toggleFavoriteEvent(Event e, bool isFav) {
     setState(() {
@@ -344,11 +357,19 @@ Future<void> _initializeApp() async {
 }
 
 Future<void> _initDb() async {
-  if (_authRepository.currentUserId == null) {
-    await _authRepository.signIn(_devUsers.first);
-  }
+if (_authRepository.currentUserId == null) {
+  await _authRepository.signIn(_devUsers.first);
+}
 
-  final profiles = await ProfilesRepositoryIsar.loadProfiles();
+  final userId = _authRepository.currentUserId!;
+
+  // ❌ REMOVE migration completely for now
+  // (this was polluting your data)
+
+  // 🔹 ONLY load this user's profiles
+  final profiles =
+      await ProfilesRepositoryIsar.loadProfilesByUser(userId);
+
   if (!mounted) return;
   setState(() => _profiles = profiles);
 
@@ -358,13 +379,13 @@ Future<void> _initDb() async {
   await _loadSlotSelectionsFromPrefs();
 }
 
-
   // ============================
   // PROFILES
   // ============================
 
   Future<void> _handleSave(Profile profile) async {
-    await ProfilesRepositoryIsar.saveProfile(profile);
+    final userId = _authRepository.currentUserId!;
+await ProfilesRepositoryIsar.saveProfileForUser(profile, userId);
 
     setState(() {
       final index = _profiles.indexWhere((p) => p.id == profile.id);
@@ -382,28 +403,31 @@ Future<void> _initDb() async {
   }
 
   Future<void> _handleDelete(Profile profile) async {
-    // count before
-    final before = (await ProfilesRepositoryIsar.loadProfiles()).length;
+  final userId = _authRepository.currentUserId!;
 
-    await ProfilesRepositoryIsar.deleteProfile(profile);
+  final before =
+      (await ProfilesRepositoryIsar.loadProfilesByUser(userId)).length;
 
-    // reload after
-    final fresh = await ProfilesRepositoryIsar.loadProfiles();
-    if (!mounted) return;
-    setState(() => _profiles = fresh);
+  await ProfilesRepositoryIsar.deleteProfile(profile);
 
-    final after = fresh.length;
+  final fresh =
+      await ProfilesRepositoryIsar.loadProfilesByUser(userId);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          after < before
-              ? 'Profile deleted'
-              : 'Could not locate this profile to delete',
-        ),
+  if (!mounted) return;
+  setState(() => _profiles = fresh);
+
+  final after = fresh.length;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        after < before
+            ? 'Profile deleted'
+            : 'Could not locate this profile to delete',
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ============================
   // EVENTS DB
@@ -423,8 +447,7 @@ Future<void> _initDb() async {
       if (!mounted) return;
       setState(() => _events = events);
     } catch (e, st) {
-      debugPrint('initDb failed: $e');
-      debugPrintStack(stackTrace: st);
+
       showSnack('Init failed: $e');
     }
   }
