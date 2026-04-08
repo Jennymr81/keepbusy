@@ -10,6 +10,7 @@ import '../models/profile.dart';
 
 import '../widgets/selected_session_card.dart';
 import 'package:intl/intl.dart';
+import '../widgets/profile_preview_dialog_kb.dart';
 
 // ==============================
 // Saved Page-specific helpers
@@ -642,6 +643,11 @@ if (!canUseTwoCols) {
             forProfilesLabel: m.forProfilesLabel,
             imageSrc: m.imageSrc,
             sessionLocation: m.sessionLocation,
+            profiles: widget.profiles
+    .where((p) => m.profileIds.contains(p.id))
+    .toList(),
+    firstDate: m.firstDate,
+    lastDate: m.lastDate,
             onOpenEvent: () => widget.onOpenEvent(m.event),
             onEditEvent: null,
             onUnselect: widget.onUnselectSession == null
@@ -653,6 +659,8 @@ if (!canUseTwoCols) {
           ),
         );
       }),
+
+  
 
       if (pastSessions.isNotEmpty) ...[
         const SizedBox(height: 32),
@@ -677,6 +685,12 @@ if (!canUseTwoCols) {
                   forProfilesLabel: m.forProfilesLabel,
                   imageSrc: m.imageSrc,
                   sessionLocation: m.sessionLocation,
+                  profiles: widget.profiles
+    .where((p) => m.profileIds.contains(p.id))
+    .toList(),
+    
+    firstDate: m.firstDate,
+    lastDate: m.lastDate,
                   onOpenEvent: () => widget.onOpenEvent(m.event),
                   onEditEvent: null,
                   onUnselect: widget.onUnselectSession == null
@@ -697,76 +711,71 @@ if (!canUseTwoCols) {
 return Column(
   children: [
     for (int i = 0; i < activeSessions.length; i += 2)
-      Padding(
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: SelectedSessionCard(
-                eventTitle: activeSessions[i].eventTitle,
-                sessionLabel: activeSessions[i].sessionLabel,
-                dayDateLabel: activeSessions[i].dayDateLabel,
-                timeLabel: activeSessions[i].timeLabel,
-                metaLabel: activeSessions[i].metaLabel,
-                forProfilesLabel:
-                    activeSessions[i].forProfilesLabel,
-                imageSrc: activeSessions[i].imageSrc,
-                sessionLocation:
-                    activeSessions[i].sessionLocation,
-
-                onOpenEvent: () => widget
-                    .onOpenEvent(activeSessions[i].event),
-                onEditEvent: null,
-                onUnselect: widget.onUnselectSession == null
-                    ? null
-                    : () => widget.onUnselectSession!(
-                          activeSessions[i].eventId,
-                          activeSessions[i].sessionIndex,
-                        ),
-              ),
-            ),
-            const SizedBox(width: 24),
-            if (i + 1 < activeSessions.length)
-              Expanded(
-                child: SelectedSessionCard(
-                  eventTitle:
-                      activeSessions[i + 1].eventTitle,
-                  sessionLabel:
-                      activeSessions[i + 1].sessionLabel,
-                  dayDateLabel:
-                      activeSessions[i + 1].dayDateLabel,
-                  timeLabel:
-                      activeSessions[i + 1].timeLabel,
-                  metaLabel:
-                      activeSessions[i + 1].metaLabel,
-                  forProfilesLabel:
-                      activeSessions[i + 1]
-                          .forProfilesLabel,
-                  imageSrc:
-                      activeSessions[i + 1].imageSrc,
-                  sessionLocation:
-                      activeSessions[i + 1]
-                          .sessionLocation,
-                  onOpenEvent: () => widget.onOpenEvent(
-                      activeSessions[i + 1].event),
-                  onEditEvent: null,
-                  onUnselect:
-                      widget.onUnselectSession == null
-                          ? null
-                          : () => widget.onUnselectSession!(
-                                activeSessions[i + 1]
-                                    .eventId,
-                                activeSessions[i + 1]
-                                    .sessionIndex,
-                              ),
-                ),
-              )
-            else
-              const Spacer(),
-          ],
+  Padding(
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: SelectedSessionCard(
+            eventTitle: activeSessions[i].eventTitle,
+            sessionLabel: activeSessions[i].sessionLabel,
+            dayDateLabel: activeSessions[i].dayDateLabel,
+            timeLabel: activeSessions[i].timeLabel,
+            metaLabel: activeSessions[i].metaLabel,
+            forProfilesLabel: activeSessions[i].forProfilesLabel,
+            imageSrc: activeSessions[i].imageSrc,
+            sessionLocation: activeSessions[i].sessionLocation,
+            profiles: widget.profiles
+                .where((p) => activeSessions[i].profileIds.contains(p.id))
+                .toList(),
+            firstDate: activeSessions[i].firstDate,
+            lastDate: activeSessions[i].lastDate,
+            onOpenEvent: () =>
+                widget.onOpenEvent(activeSessions[i].event),
+            onEditEvent: null,
+            onUnselect: widget.onUnselectSession == null
+                ? null
+                : () => widget.onUnselectSession!(
+                      activeSessions[i].eventId,
+                      activeSessions[i].sessionIndex,
+                    ),
+          ),
         ),
-      ),
+        const SizedBox(width: 24),
+        if (i + 1 < activeSessions.length)
+          Expanded(
+            child: SelectedSessionCard(
+              eventTitle: activeSessions[i + 1].eventTitle,
+              sessionLabel: activeSessions[i + 1].sessionLabel,
+              dayDateLabel: activeSessions[i + 1].dayDateLabel,
+              timeLabel: activeSessions[i + 1].timeLabel,
+              metaLabel: activeSessions[i + 1].metaLabel,
+              forProfilesLabel: activeSessions[i + 1].forProfilesLabel,
+              imageSrc: activeSessions[i + 1].imageSrc,
+              sessionLocation: activeSessions[i + 1].sessionLocation,
+              profiles: widget.profiles
+                  .where((p) => activeSessions[i + 1].profileIds.contains(p.id))
+                  .toList(),
+              firstDate: activeSessions[i + 1].firstDate,
+              lastDate: activeSessions[i + 1].lastDate,   
+              onOpenEvent: () => widget
+                  .onOpenEvent(activeSessions[i + 1].event),
+              onEditEvent: null,
+              onUnselect:
+                  widget.onUnselectSession == null
+                      ? null
+                      : () => widget.onUnselectSession!(
+                            activeSessions[i + 1].eventId,
+                            activeSessions[i + 1].sessionIndex,
+                          ),
+            ),
+          )
+        else
+          const Spacer(),
+      ],
+    ),
+  ),
 
     if (pastSessions.isNotEmpty) ...[
       const SizedBox(height: 32),
@@ -791,6 +800,11 @@ return Column(
                 forProfilesLabel: m.forProfilesLabel,
                 imageSrc: m.imageSrc,
                 sessionLocation: m.sessionLocation,
+                profiles: widget.profiles
+                    .where((p) => m.profileIds.contains(p.id))
+                    .toList(),
+                firstDate: m.firstDate,
+                lastDate: m.lastDate,
                 onOpenEvent: () => widget.onOpenEvent(m.event),
                 onEditEvent: null,
                 onUnselect: widget.onUnselectSession == null
@@ -963,7 +977,7 @@ class _SavedSessionView {
 // ===============================
 // SELECTED SESSION CARD WIDGET
 // ===============================
-class SelectedSessionCard extends StatelessWidget {
+class SelectedSessionCard extends StatefulWidget {
   const SelectedSessionCard({
     super.key,
     required this.eventTitle,
@@ -974,6 +988,9 @@ class SelectedSessionCard extends StatelessWidget {
     required this.forProfilesLabel,
     required this.imageSrc,
     required this.sessionLocation,
+    required this.profiles,
+    required this.firstDate,
+    required this.lastDate,
     this.onOpenEvent,
     this.onEditEvent,
     this.onUnselect,
@@ -987,11 +1004,37 @@ class SelectedSessionCard extends StatelessWidget {
   final String forProfilesLabel;
   final String imageSrc;
   final String sessionLocation;
-  
+  final List<Profile> profiles;
+  final DateTime firstDate;
+  final DateTime lastDate;
 
   final VoidCallback? onOpenEvent;
   final VoidCallback? onEditEvent;
   final VoidCallback? onUnselect;
+
+  @override
+  State<SelectedSessionCard> createState() =>
+      _SelectedSessionCardState();
+}
+
+class _SelectedSessionCardState extends State<SelectedSessionCard> {
+  bool _showAllProfiles = false;
+  int? _hoveredAvatarIndex;
+
+
+String _sessionStatus() {
+  final now = DateTime.now();
+
+  if (now.isAfter(widget.firstDate) &&
+      now.isBefore(widget.lastDate)) {
+    return 'In Session';
+  } else if (widget.firstDate.difference(now).inDays <= 7 &&
+      widget.firstDate.isAfter(now)) {
+    return 'Starting Soon';
+  }
+
+  return '';
+}
 
   ImageProvider _imageProvider(String? src) {
     const fallback = 'assets/soccer_camp.jpg';
@@ -1011,100 +1054,131 @@ class SelectedSessionCard extends StatelessWidget {
     return FileImage(File(s));
   }
 
-@override
+  @override
 Widget build(BuildContext context) {
   final theme = Theme.of(context);
-  final provider = _imageProvider(imageSrc);
+  final provider = _imageProvider(widget.imageSrc);
 
   return LayoutBuilder(
     builder: (context, constraints) {
       final useHorizontal = constraints.maxWidth >= 600;
 
       return Padding(
-  padding: const EdgeInsets.symmetric(vertical: 10),
-  child: _HoverCard(
-    child: InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onOpenEvent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.black.withOpacity(.05)),
-        ),
-          child: useHorizontal
-              ? IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(18),
-                        ),
-                        child: SizedBox(
-                          width: 260,
-                          child: Image(
-                            image: provider,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                Container(color: const Color(0xFFF2F2F2)),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                              20, 18, 20, 18),
-                          child: _buildContent(theme, constraints),
-                        ),
-                      ),
-                    ],
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: _HoverCard(
+          child: Stack(
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: widget.onOpenEvent,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.black.withOpacity(.05),
+                    ),
                   ),
-                )
-              : Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ClipRRect(
-                      borderRadius:
-                          const BorderRadius.vertical(
-                        top: Radius.circular(18),
-                      ),
-                      child: AspectRatio(
-                        aspectRatio: 4 / 3,
-                        child: Image(
-                          image: provider,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              Container(
-                                  color:
-                                      const Color(0xFFF2F2F2)),
+                  child: useHorizontal
+                      ? IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.stretch,
+                            children: [
+                              ClipRRect(
+                                borderRadius:
+                                    const BorderRadius.horizontal(
+                                  left: Radius.circular(18),
+                                ),
+                                child: SizedBox(
+                                  width: 260,
+                                  child: Image(
+                                    image: provider,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(
+                                          20, 18, 20, 18),
+                                  child: _buildContent(theme),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ClipRRect(
+                              borderRadius:
+                                  const BorderRadius.vertical(
+                                top: Radius.circular(18),
+                              ),
+                              child: AspectRatio(
+                                aspectRatio: 4 / 3,
+                                child: Image(
+                                  image: provider,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(
+                                      16, 14, 16, 16),
+                              child: _buildContent(theme),
+                            ),
+                          ],
                         ),
+                ),
+              ),
+
+              // 🔹 STATUS BADGE (TOP RIGHT)
+              if (_sessionStatus().isNotEmpty)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _sessionStatus() == 'In Session'
+                          ? Colors.green.withOpacity(0.9)
+                          : Colors.orange.withOpacity(0.9),
+                      borderRadius:
+                          BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _sessionStatus(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                          16, 14, 16, 16),
-                      child: _buildContent(theme, constraints),
-                    ),
-                  ],
+                  ),
                 ),
+            ],
+          ),
         ),
-        ),
-  ),
       );
     },
   );
 }
 
 
-
-Widget _buildContent(ThemeData theme, BoxConstraints constraints) {
+Widget _buildContent(ThemeData theme) {
 
   // 🔹 Extract location + cleaned date text
   String location = '';
-  String cleanedDayDate = dayDateLabel;
+  String cleanedDayDate = widget.dayDateLabel;
   // 🔹 Split meta into structured parts
 String ageText = '';
 String levelText = '';
@@ -1112,36 +1186,18 @@ String durationCostText = '';
 // 🔹 Compute session status
 String sessionStatus = '';
 
-try {
-  if (cleanedDayDate.contains('–')) {
-    final parts = cleanedDayDate.split('–');
+final now = DateTime.now();
 
-    if (parts.length == 2) {
-      final now = DateTime.now();
-      final year = now.year;
-
-      final startRaw = parts[0].trim().replaceAll(RegExp(r'^[A-Za-z]{3} • '), '');
-      final endRaw = parts[1].trim();
-
-      final format = DateFormat('MMM d');
-
-      final startDate = format.parse('$startRaw').copyWith(year: year);
-      final endDate = format.parse('$endRaw').copyWith(year: year);
-
-      if (now.isAfter(startDate) && now.isBefore(endDate)) {
-        sessionStatus = 'In Session';
-      } else if (startDate.difference(now).inDays <= 7 &&
-          startDate.isAfter(now)) {
-        sessionStatus = 'Starting Soon';
-      }
-    }
-  }
-} catch (_) {
-  // safe fallback
+if (now.isAfter(widget.firstDate) &&
+    now.isBefore(widget.lastDate)) {
+  sessionStatus = 'In Session';
+} else if (widget.firstDate.difference(now).inDays <= 7 &&
+    widget.firstDate.isAfter(now)) {
+  sessionStatus = 'Starting Soon';
 }
 
-if (metaLabel.contains('•')) {
-  final parts = metaLabel.split('•').map((e) => e.trim()).toList();
+if (widget.metaLabel.contains('•')) {
+  final parts = widget.metaLabel.split('•').map((e) => e.trim()).toList();
 
   if (parts.isNotEmpty) ageText = parts[0];
   if (parts.length > 1) levelText = parts[1];
@@ -1150,11 +1206,11 @@ if (metaLabel.contains('•')) {
   }
 }
 
-if (dayDateLabel.contains('•')) {
-  final parts = dayDateLabel.split('•').map((e) => e.trim()).toList();
+if (widget.dayDateLabel.contains('•')) {
+  final parts = widget.dayDateLabel.split('•').map((e) => e.trim()).toList();
 
   if (parts.length > 1) {
-    location = sessionLocation.isNotEmpty ? sessionLocation : parts.first;
+    location = widget.sessionLocation.isNotEmpty ? widget.sessionLocation : parts.first;
     cleanedDayDate = parts.sublist(1).join(' • ');
   }
 }
@@ -1166,7 +1222,7 @@ if (dayDateLabel.contains('•')) {
       // 🔹 HEADER (Search-style)
       // 🔹 TITLE (always on top)
 Text(
-  eventTitle,
+  widget.eventTitle,
   maxLines: 2,
   overflow: TextOverflow.ellipsis,
   style: theme.textTheme.titleMedium?.copyWith(
@@ -1176,18 +1232,6 @@ Text(
 
 const SizedBox(height: 6),
 
-if (sessionStatus.isNotEmpty) ...[
-  Text(
-  sessionStatus,
-  style: theme.textTheme.bodySmall?.copyWith(
-    color: sessionStatus == 'In Session'
-        ? Colors.green
-        : Colors.orange,
-    fontWeight: FontWeight.w600,
-  ),
-),
-  const SizedBox(height: 6),
-],
 
 // 🔹 RESPONSIVE META SECTION
 // 🔹 META SECTION (stable layout)
@@ -1201,7 +1245,7 @@ Row(
   child: Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      if (metaLabel.isNotEmpty)
+      if (widget.metaLabel.isNotEmpty)
         Column(
   crossAxisAlignment: CrossAxisAlignment.start,
   children: [
@@ -1247,9 +1291,9 @@ Row(
                 ?.copyWith(color: Colors.black54),
           ),
 
-        if (timeLabel.isNotEmpty)
+        if (widget.timeLabel.isNotEmpty)
           Text(
-            timeLabel,
+            widget.timeLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall
@@ -1272,7 +1316,7 @@ Row(
       const SizedBox(height: 12),
 
       // 🔹 SESSION CHIP (keep your feature)
-      if (sessionLabel.isNotEmpty) ...[
+      if (widget.sessionLabel.isNotEmpty) ...[
         Container(
           padding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1281,7 +1325,7 @@ Row(
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            sessionLabel,
+            widget.sessionLabel,
             style: theme.textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.primary,
@@ -1291,48 +1335,201 @@ Row(
         const SizedBox(height: 10),
       ],
 
-      // 🔹 PROFILES (placeholder for avatars)
-if (forProfilesLabel.isNotEmpty)
-  Row(
-    children: [
-      // avatars will go here next step
-    ],
+      // 🔹 PROFILES + CHECKBOX
+Row(
+  children: [
+    // ✅ Checkbox (moved here)
+    if (widget.onUnselect != null)
+      IconButton(
+        icon: const Icon(Icons.check_box, size: 20),
+        color: theme.colorScheme.primary,
+        onPressed: widget.onUnselect,
+      ),
+
+    // ✅ Avatars placeholder (next step we populate)
+    if (widget.forProfilesLabel.isNotEmpty)
+      Expanded(
+        child: Row(
+          children: [
+           Builder(
+  builder: (context) {
+    final display = _showAllProfiles
+    ? widget.profiles
+    : widget.profiles.take(3).toList();
+
+final extraCount = widget.profiles.length - 3;
+
+    return Row(
+      children: [
+        AnimatedContainer(
+  duration: const Duration(milliseconds: 220),
+  curve: Curves.easeInOut,
+  height: 24,
+  width: (display.length * 16) + 24,
+  child: Stack(
+            children: [
+              for (int i = 0; i < display.length; i++)
+                Positioned(
+  left: i * 16,
+  child: MouseRegion(
+    cursor: SystemMouseCursors.click,
+    onEnter: (_) {
+      setState(() {
+        _hoveredAvatarIndex = i;
+      });
+    },
+    onExit: (_) {
+      setState(() {
+        _hoveredAvatarIndex = null;
+      });
+    },
+    child: AnimatedScale(
+      scale: _hoveredAvatarIndex == i ? 1.1 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: _hoveredAvatarIndex == i
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : [],
+        ),
+        child: Tooltip(
+          message: (display[i].nickname != null &&
+                  display[i].nickname!.isNotEmpty)
+              ? display[i].nickname!
+              : display[i].firstName,
+          child: GestureDetector(
+            onTap: () {
+              openProfilePreviewDialog(
+                context: context,
+                profile: display[i],
+                color: Color(display[i].colorValue),
+                avatarProvider: (display[i].asset != null &&
+                        display[i].asset!.isNotEmpty)
+                    ? (display[i].asset!.startsWith('http')
+                        ? NetworkImage(display[i].asset!)
+                        : FileImage(File(display[i].asset!))
+                            as ImageProvider)
+                    : const AssetImage('assets/soccer_camp.jpg'),
+              );
+            },
+            child: CircleAvatar(
+              radius: 12,
+              backgroundColor: Colors.white,
+              child: CircleAvatar(
+                radius: 11,
+                backgroundColor: Colors.grey.shade200,
+                backgroundImage: (display[i].asset != null &&
+                        display[i].asset!.isNotEmpty)
+                    ? (display[i].asset!.startsWith('http')
+                        ? NetworkImage(display[i].asset!)
+                        : FileImage(File(display[i].asset!))
+                            as ImageProvider)
+                    : null,
+                child: (display[i].asset == null ||
+                        display[i].asset!.isEmpty)
+                    ? Text(
+                        display[i].firstName.isNotEmpty
+                            ? display[i]
+                                .firstName[0]
+                                .toUpperCase()
+                            : '?',
+                        style: const TextStyle(fontSize: 10),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
   ),
+),
+            ],
+          ),
+        ),
+
+        if (extraCount > 0) ...[
+  const SizedBox(width: 6),
+  if (!_showAllProfiles && extraCount > 0) ...[
+  const SizedBox(width: 6),
+  GestureDetector(
+    onTap: () {
+      setState(() {
+        _showAllProfiles = true;
+      });
+    },
+    child: Text(
+      '+$extraCount',
+      style: Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(fontWeight: FontWeight.w600),
+    ),
+  ),
+],
+
+if (_showAllProfiles && widget.profiles.length > 3) ...[
+  const SizedBox(width: 6),
+  GestureDetector(
+    onTap: () {
+      setState(() {
+        _showAllProfiles = false;
+      });
+    },
+    child: Text(
+      '–',
+      style: Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(fontWeight: FontWeight.w600),
+    ),
+  ),
+],
+],
+      ],
+    );
+  },
+),
+          ],
+        ),
+      ),
+  ],
+),
 
 const SizedBox(height: 12),
 
-      // 🔹 ACTIONS (unchanged)
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          if (onUnselect != null)
-            IconButton(
-              icon: const Icon(Icons.check_box, size: 20),
-              color: theme.colorScheme.primary,
-              onPressed: onUnselect,
-            )
-          else
-            const SizedBox(width: 20),
-
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextButton(
-                onPressed: onOpenEvent,
-                child: const Text('View Event Details'),
-              ),
-              if (onEditEvent != null) ...[
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: onEditEvent,
-                  child: const Text('EDIT'),
-                ),
-              ],
-            ],
+// 🔹 ACTIONS (checkbox removed from here)
+Row(
+  mainAxisAlignment: MainAxisAlignment.end,
+  children: [
+    Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextButton(
+          onPressed: widget.onOpenEvent,
+          child: const Text('View Event Details'),
+        ),
+        if (widget.onEditEvent != null) ...[
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: widget.onEditEvent,
+            child: const Text('EDIT'),
           ),
         ],
-      ),
-    ],
+      ],
+    ),
+  ],
+),
+
+        ],
   );
 }
 }

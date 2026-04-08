@@ -450,6 +450,22 @@ cards.add(
     forProfilesLabel: forLabel,
     imageSrc: imageSrc,
     sessionLocation: '', 
+    firstDate: first,
+    lastDate: last,
+    profiles: widget.profiles.where((p) {
+  final sessionSlots = bySession[key] ?? const <EventSlot>[];
+
+  for (final s in sessionSlots) {
+    final sid = s.id;
+    if (sid != 0) {
+      final ids = _slotSelectedProfileIds[sid];
+      if (ids != null && ids.contains(p.id)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}).toList(),
     onOpenEvent: () {
     },
           onEditEvent: _editEvent,

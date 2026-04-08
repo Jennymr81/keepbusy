@@ -7,20 +7,21 @@ import 'package:keepbusy/models/profile.dart';
 // (for Saved page – per-session selection)
 // ===============================
 class SelectedSessionCard extends StatelessWidget {
-  const SelectedSessionCard({
-    super.key,
-    required this.eventTitle,
-    required this.sessionLabel,
-    required this.dayDateLabel,
-    required this.timeLabel,
-    required this.metaLabel,
-    required this.forProfilesLabel,
-    required this.imageSrc,
-    required this.sessionLocation,
-    this.onOpenEvent,
-    this.onEditEvent,
-    this.onUnselect,
-  });
+const SelectedSessionCard({
+  super.key,
+  required this.eventTitle,
+  required this.sessionLabel,
+  required this.dayDateLabel,
+  required this.timeLabel,
+  required this.metaLabel,
+  required this.forProfilesLabel,
+  required this.imageSrc,
+  required this.sessionLocation,
+  required this.profiles,
+  this.onOpenEvent,
+  this.onEditEvent,
+  this.onUnselect,
+});
 
   final String eventTitle;
   final String sessionLabel;
@@ -30,6 +31,7 @@ class SelectedSessionCard extends StatelessWidget {
   final String forProfilesLabel;
   final String imageSrc;
   final String sessionLocation;
+  final List<Profile> profiles;
 
   final VoidCallback? onOpenEvent;
   final VoidCallback? onEditEvent;
